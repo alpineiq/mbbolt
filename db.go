@@ -102,6 +102,10 @@ func (db *DB) Batch(fn func(*Tx) error) error {
 	return db.RawDB.Batch(func(tx *RawTx) error { return fn(&Tx{tx, db}) })
 }
 
+func (db *DB) Close() error {
+	return db.RawDB.Close()
+}
+
 func (db *DB) updateSlow(fn func(*Tx) error, su *slowUpdate) (err error) {
 	var pcs [6]uintptr
 
