@@ -3,6 +3,7 @@ package mbbolt
 import (
 	"encoding/json"
 	"log"
+	"math/big"
 	"runtime"
 	"time"
 )
@@ -119,6 +120,13 @@ func (db *DB) CreateBucketWithIndex(bucket string, idx uint64) error {
 		}
 		return b.SetSequence(idx)
 	})
+}
+
+func (db *DB) CreateBucketWithIndexBig(bucket string, idx *big.Int) error {
+	if idx == nil {
+		db.CreateBucketWithIndex(bucket, 0)
+	}
+	return db.CreateBucketWithIndex(bucket, idx.Uint64())
 }
 
 func (db *DB) getTxFn(fn func(*Tx) error) func(tx *BBoltTx) error {

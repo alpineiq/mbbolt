@@ -10,18 +10,23 @@ func ConvertDB(src, dst *DB, bucketFn func(name string, b *Bucket) bool, fn Conv
 	return src.View(func(stx *Tx) error {
 		return dst.Update(func(dtx *Tx) error {
 			return stx.BBoltTx.ForEach(func(name []byte, b *Bucket) error {
-				sname := string(name)
-				if !bucketFn(sname, b) {
+				bktName := string(name)
+				if !bucketFn(bktName, b) {
 					return nil
 				}
 
-				dbkt, err := dtx.CreateBucketIfNotExists(name)
+				dstBkt, err := dtx.CreateBucketIfNotExists(name)
 				if err != nil {
 					return err
 				}
+
+				if err = dstBkt.SetSequence(b.Sequence()); err != nil {
+					return err
+				}
+
 				return b.ForEach(func(k, v []byte) (err error) {
-					if v, ok := fn(sname, k, v); ok {
-						err = dbkt.Put(k, v)
+					if v, ok := fn(bktName, k, v); ok {
+						err = dstBkt.Put(k, v)
 					}
 					return
 				})

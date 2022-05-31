@@ -94,6 +94,8 @@ func (tx *Tx) Range(bucket string, start []byte, fn func(cursor *Cursor, k, v []
 	return
 }
 
+// ForEachUpdate passes a func to the loop func to allow you to set values inside the loop,
+// this is a workaround settings values inside a foreach loop which isn't allowed.
 func (tx *Tx) ForEachUpdate(bucket string, fn func(k, v []byte, setValue func(k, nv []byte)) (err error)) (err error) {
 	var updateTable map[string][]byte
 	b := bucketTx(tx, bucket)
@@ -139,7 +141,7 @@ func (tx *Tx) NextIndexBig(bucket string) (*big.Int, error) {
 	if err != nil {
 		return nil, err
 	}
-	return big.NewInt(0).SetUint64(u), nil
+	return new(big.Int).SetUint64(u), nil
 }
 
 func GetTxAny[T any](tx *Tx, bucket, key string, unmarshalFn UnmarshalFn) (out T, err error) {
