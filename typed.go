@@ -1,4 +1,4 @@
-package extbolt
+package genbolt
 
 func Typed[T any](db *DB) TypedDB[T] { return TypedDB[T]{db} }
 

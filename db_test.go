@@ -1,4 +1,4 @@
-package extbolt
+package genbolt
 
 import (
 	"fmt"
