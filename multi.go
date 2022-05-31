@@ -170,6 +170,26 @@ func (mdb *MultiDB) Get(name string, opts *Options) (db *DB, err error) {
 	return
 }
 
+func (mdb *MultiDB) ForEachDB(fn func(name string, db *DB) error) error {
+	mdb.mux.RLock()
+	dbNames := make([]string, 0, len(mdb.m))
+	for name := range mdb.m {
+		dbNames = append(dbNames, name)
+	}
+	mdb.mux.RUnlock()
+	for _, name := range dbNames {
+		mdb.mux.RLock()
+		db := mdb.m[name]
+		mdb.mux.RUnlock()
+		if db != nil {
+			if err := fn(name, db); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func (mdb *MultiDB) CloseDB(name string) (err error) {
 	mdb.mux.Lock()
 	defer mdb.mux.Unlock()
