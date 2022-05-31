@@ -1,4 +1,4 @@
-package genbolt
+package mbbolt
 
 import (
 	"sync"
@@ -9,7 +9,7 @@ import (
 func ConvertDB(src, dst *DB, bucketFn func(name string, b *Bucket) bool, fn ConvertFn) error {
 	return src.View(func(stx *Tx) error {
 		return dst.Update(func(dtx *Tx) error {
-			return stx.RawTx.ForEach(func(name []byte, b *Bucket) error {
+			return stx.BBoltTx.ForEach(func(name []byte, b *Bucket) error {
 				sname := string(name)
 				if !bucketFn(sname, b) {
 					return nil

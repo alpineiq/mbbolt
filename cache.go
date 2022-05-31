@@ -1,4 +1,4 @@
-package genbolt
+package mbbolt
 
 import (
 	"log"

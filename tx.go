@@ -1,7 +1,8 @@
-package genbolt
+package mbbolt
 
 import (
 	"log"
+	"math/big"
 
 	"go.etcd.io/bbolt"
 )
@@ -14,7 +15,7 @@ type (
 )
 
 type Tx struct {
-	*RawTx
+	*BBoltTx
 	db *DB
 }
 
@@ -129,6 +130,18 @@ func (tx *Tx) Delete(bucket, key string) error {
 	return bucketTx(tx, bucket).Delete(unsafeBytes(key))
 }
 
+func (tx *Tx) NextIndex(bucket string) (uint64, error) {
+	return bucketTx(tx, bucket).NextSequence()
+}
+
+func (tx *Tx) NextIndexBig(bucket string) (*big.Int, error) {
+	u, err := tx.NextIndex(bucket)
+	if err != nil {
+		return nil, err
+	}
+	return big.NewInt(0).SetUint64(u), nil
+}
+
 func GetTxAny[T any](tx *Tx, bucket, key string, unmarshalFn UnmarshalFn) (out T, err error) {
 	if unmarshalFn == nil {
 		unmarshalFn = DefaultUnmarshalFn
@@ -171,7 +184,7 @@ func ForEachTx[T any](tx *Tx, bucket string, fn func(key []byte, val T) error, f
 }
 
 func bucketTx(tx *Tx, bucket string) *Bucket {
-	return tx.RawTx.Bucket(unsafeBytes(bucket))
+	return tx.BBoltTx.Bucket(unsafeBytes(bucket))
 }
 
 func bucketTxIfNotExists(tx *Tx, bucket string) (*Bucket, error) {

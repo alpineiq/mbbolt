@@ -1,4 +1,4 @@
-package genbolt
+package mbbolt
 
 import (
 	"encoding/json"
@@ -13,7 +13,7 @@ var (
 )
 
 type DB struct {
-	*RawDB
+	*BBoltDB
 	marshalFn   MarshalFn
 	unmarshalFn UnmarshalFn
 	slow        *slowUpdate
@@ -87,7 +87,7 @@ func (db *DB) PutAny(bucket, key string, val any, marshalFn MarshalFn) error {
 }
 
 func (db *DB) View(fn func(*Tx) error) error {
-	return db.RawDB.View(func(tx *RawTx) error { return fn(&Tx{tx, db}) })
+	return db.BBoltDB.View(db.getTxFn(fn))
 }
 
 func (db *DB) Update(fn func(*Tx) error) error {
@@ -95,15 +95,42 @@ func (db *DB) Update(fn func(*Tx) error) error {
 		return db.updateSlow(fn, db.slow)
 	}
 
-	return db.RawDB.Update(func(tx *RawTx) error { return fn(&Tx{tx, db}) })
+	return db.BBoltDB.Update(db.getTxFn(fn))
 }
 
 func (db *DB) Batch(fn func(*Tx) error) error {
-	return db.RawDB.Batch(func(tx *RawTx) error { return fn(&Tx{tx, db}) })
+	return db.BBoltDB.Batch(db.getTxFn(fn))
+}
+
+func (db *DB) CreateBucket(bucket string) error {
+	bb := unsafeBytes(bucket)
+	return db.Update(func(tx *Tx) error {
+		_, err := tx.CreateBucketIfNotExists(bb)
+		return err
+	})
+}
+
+func (db *DB) CreateBucketWithIndex(bucket string, idx uint64) error {
+	bb := unsafeBytes(bucket)
+	return db.Update(func(tx *Tx) error {
+		b, err := tx.CreateBucketIfNotExists(bb)
+		if err != nil {
+			return err
+		}
+		return b.SetSequence(idx)
+	})
+}
+
+func (db *DB) getTxFn(fn func(*Tx) error) func(tx *BBoltTx) error {
+	return func(tx *BBoltTx) error { return fn(&Tx{tx, db}) }
+}
+
+func (db *DB) BBolt() *BBoltDB {
+	return db.BBoltDB
 }
 
 func (db *DB) Close() error {
-	return db.RawDB.Close()
+	return db.BBoltDB.Close()
 }
 
 func (db *DB) updateSlow(fn func(*Tx) error, su *slowUpdate) (err error) {
@@ -115,7 +142,7 @@ func (db *DB) updateSlow(fn func(*Tx) error, su *slowUpdate) (err error) {
 	su.Lock()
 	defer su.Unlock()
 
-	err = db.RawDB.Update(func(tx *RawTx) error { return fn(&Tx{tx, db}) })
+	err = db.BBoltDB.Update(db.getTxFn(fn))
 	if took := time.Since(start); took >= su.min {
 		su.fn(frames, took)
 	}

@@ -1,4 +1,4 @@
-module go.oneofone.dev/genbolt
+module go.oneofone.dev/mbbolt
 
 go 1.18
 

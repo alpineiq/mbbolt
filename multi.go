@@ -1,4 +1,4 @@
-package genbolt
+package mbbolt
 
 import (
 	"errors"
@@ -16,18 +16,24 @@ import (
 
 // bbolt type aliases
 type (
-	RawDB   = bbolt.DB
+	BBoltDB      = bbolt.DB
+	BBoltTx      = bbolt.Tx
+	BBoltOptions = bbolt.Options
+
 	Bucket  = bbolt.Bucket
 	Cursor  = bbolt.Cursor
 	TxStats = bbolt.TxStats
-	Options = bbolt.Options
-
-	RawTx = bbolt.Tx
 
 	OnSlowUpdateFn func(callers *runtime.Frames, took time.Duration)
 )
 
-var DefaultOptions = Options{
+type Options struct {
+	InitDB func(db *DB) error
+	*BBoltOptions
+	InitialBuckets []string
+}
+
+var DefaultBBoltOptions = BBoltOptions{
 	Timeout:        time.Second, // don't block indefinitely if the db isn't closed
 	NoFreelistSync: true,        // improves write performance, slow load if the db isn't closed cleanly
 	NoGrowSync:     false,
@@ -118,19 +124,34 @@ func (mdb *MultiDB) Get(name string, opts *Options) (db *DB, err error) {
 		opts = mdb.opts
 	}
 
-	if opts == nil {
-		opts = &DefaultOptions
+	bbOpts := &DefaultBBoltOptions
+	if opts != nil && opts.BBoltOptions != nil {
+		bbOpts = opts.BBoltOptions
 	}
 
-	var bdb *RawDB
-	if bdb, err = bbolt.Open(fp, 0o600, opts); err != nil {
+	var bdb *BBoltDB
+	if bdb, err = bbolt.Open(fp, 0o600, bbOpts); err != nil {
 		return
 	}
 
 	db = &DB{
-		RawDB:       bdb,
+		BBoltDB:     bdb,
 		marshalFn:   DefaultMarshalFn,
 		unmarshalFn: DefaultUnmarshalFn,
+	}
+
+	if opts != nil && opts.InitDB != nil {
+		if err = opts.InitDB(db); err != nil {
+			return
+		}
+	}
+
+	if opts != nil && opts.InitialBuckets != nil {
+		for _, bucket := range opts.InitialBuckets {
+			if err = db.CreateBucket(bucket); err != nil {
+				return
+			}
+		}
 	}
 
 	if mdb.m == nil {

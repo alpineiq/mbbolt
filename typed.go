@@ -1,4 +1,4 @@
-package genbolt
+package mbbolt
 
 func Typed[T any](db *DB) TypedDB[T] { return TypedDB[T]{db} }
 
