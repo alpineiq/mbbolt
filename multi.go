@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -16,9 +17,8 @@ import (
 
 // bbolt type aliases
 type (
-	BBoltDB      = bbolt.DB
-	BBoltTx      = bbolt.Tx
-	BBoltOptions = bbolt.Options
+	BBoltDB = bbolt.DB
+	BBoltTx = bbolt.Tx
 
 	Bucket  = bbolt.Bucket
 	Cursor  = bbolt.Cursor
@@ -28,12 +28,85 @@ type (
 )
 
 type Options struct {
+	// OpenFile is used to open files. It defaults to os.OpenFile. This option
+	// is useful for writing hermetic tests.
+	OpenFile func(string, int, os.FileMode) (*os.File, error)
+
+	// InitDB gets called on initial db open
 	InitDB func(db *DB) error
-	*BBoltOptions
+
+	// FreelistType sets the backend freelist type. There are two options. Array which is simple but endures
+	// dramatic performance degradation if database is large and framentation in freelist is common.
+	// The alternative one is using hashmap, it is faster in almost all circumstances
+	// but it doesn't guarantee that it offers the smallest page id available. In normal case it is safe.
+	// The default type is array
+	FreelistType bbolt.FreelistType
+
+	// InitialBuckets will create the given slice of buckets on initial db open
 	InitialBuckets []string
+
+	// Sets the DB.MmapFlags flag before memory mapping the file.
+	MmapFlags int
+
+	// InitialMmapSize is the initial mmap size of the database
+	// in bytes. Read transactions won't block write transaction
+	// if the InitialMmapSize is large enough to hold database mmap
+	// size. (See DB.Begin for more information)
+	//
+	// If <=0, the initial map size is 0.
+	// If initialMmapSize is smaller than the previous database size,
+	// it takes no effect.
+	InitialMmapSize int
+
+	// PageSize overrides the default OS page size.
+	PageSize int
+
+	// Timeout is the amount of time to wait to obtain a file lock.
+	// When set to zero it will wait indefinitely. This option is only
+	// available on Darwin and Linux.
+	Timeout time.Duration
+
+	// Sets the DB.NoGrowSync flag before memory mapping the file.
+	NoGrowSync bool
+
+	// Do not sync freelist to disk. This improves the database write performance
+	// under normal operation, but requires a full database re-sync during recovery.
+	NoFreelistSync bool
+	// Open database in read-only mode. Uses flock(..., LOCK_SH |LOCK_NB) to
+	// grab a shared lock (UNIX).
+	ReadOnly bool
+
+	// NoSync sets the initial value of DB.NoSync. Normally this can just be
+	// set directly on the DB itself when returned from Open(), but this option
+	// is useful in APIs which expose Options but not the underlying DB.
+	NoSync bool
+
+	// Mlock locks database file in memory when set to true.
+	// It prevents potential page faults, however
+	// used memory can't be reclaimed. (UNIX only)
+	Mlock bool
 }
 
-var DefaultBBoltOptions = BBoltOptions{
+func (opts *Options) BoltOpts() *bbolt.Options {
+	if opts == nil {
+		return nil
+	}
+	return &bbolt.Options{
+		Timeout:         opts.Timeout,
+		NoGrowSync:      opts.NoGrowSync,
+		NoFreelistSync:  opts.NoFreelistSync,
+		FreelistType:    opts.FreelistType,
+		ReadOnly:        opts.ReadOnly,
+		MmapFlags:       opts.MmapFlags,
+		InitialMmapSize: opts.InitialMmapSize,
+		PageSize:        opts.PageSize,
+		NoSync:          opts.NoSync,
+		OpenFile:        opts.OpenFile,
+		Mlock:           opts.Mlock,
+	}
+}
+
+var DefaultBBoltOptions = Options{
 	Timeout:        time.Second, // don't block indefinitely if the db isn't closed
 	NoFreelistSync: true,        // improves write performance, slow load if the db isn't closed cleanly
 	NoGrowSync:     false,
@@ -124,13 +197,8 @@ func (mdb *MultiDB) Get(name string, opts *Options) (db *DB, err error) {
 		opts = mdb.opts
 	}
 
-	bbOpts := &DefaultBBoltOptions
-	if opts != nil && opts.BBoltOptions != nil {
-		bbOpts = opts.BBoltOptions
-	}
-
 	var bdb *BBoltDB
-	if bdb, err = bbolt.Open(fp, 0o600, bbOpts); err != nil {
+	if bdb, err = bbolt.Open(fp, 0o600, opts.BoltOpts()); err != nil {
 		return
 	}
 
