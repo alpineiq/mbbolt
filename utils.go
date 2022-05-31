@@ -1,6 +1,9 @@
 package mbbolt
 
 import (
+	"fmt"
+	"runtime"
+	"strings"
 	"sync"
 	"time"
 	"unsafe"
@@ -33,6 +36,18 @@ func ConvertDB(src, dst *DB, bucketFn func(name string, b *Bucket) bool, fn Conv
 			})
 		})
 	})
+}
+
+func FramesToString(frs *runtime.Frames) string {
+	var buf strings.Builder
+	for {
+		fr, ok := frs.Next()
+		if !ok {
+			break
+		}
+		fmt.Fprintf(&buf, "- %s:%d [%s]\n", fr.File, fr.Line, fr.Func.Name())
+	}
+	return buf.String()
 }
 
 type slowUpdate struct {

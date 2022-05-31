@@ -69,8 +69,8 @@ func CloseAll() error {
 	all.mdbs.Lock()
 	defer all.mdbs.Unlock()
 
-	for _, mdb := range all.mdbs.dbs {
-		if err := mdb.Close(); err != nil {
+	for _, db := range all.mdbs.dbs {
+		if err := db.Close(); err != nil {
 			errs = append(errs, err.Error())
 		}
 	}
@@ -135,7 +135,8 @@ func (mdb *MultiDB) Get(name string, opts *Options) (db *DB, err error) {
 	}
 
 	db = &DB{
-		BBoltDB:     bdb,
+		b: bdb,
+
 		marshalFn:   DefaultMarshalFn,
 		unmarshalFn: DefaultUnmarshalFn,
 	}
@@ -160,6 +161,12 @@ func (mdb *MultiDB) Get(name string, opts *Options) (db *DB, err error) {
 
 	mdb.m[name] = db
 
+	db.onClose = func() {
+		mdb.mux.Lock()
+		delete(mdb.m, name)
+		mdb.mux.Unlock()
+	}
+
 	return
 }
 
@@ -167,7 +174,7 @@ func (mdb *MultiDB) CloseDB(name string) (err error) {
 	mdb.mux.Lock()
 	defer mdb.mux.Unlock()
 	if db := mdb.m[name]; db != nil {
-		err = db.Close()
+		err = db.b.Close()
 		delete(mdb.m, name)
 	}
 	return

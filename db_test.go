@@ -1,12 +1,10 @@
 package mbbolt
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"reflect"
 	"runtime"
-	"strings"
 	"testing"
 	"time"
 )
@@ -100,15 +98,8 @@ func TestSlow(t *testing.T) {
 	defer os.Remove(tmp + "/x.db")
 
 	db.OnSlowUpdate(time.Second, func(frs *runtime.Frames, took time.Duration) {
-		var buf strings.Builder
-		for {
-			fr, ok := frs.Next()
-			if !ok {
-				break
-			}
-			fmt.Fprintf(&buf, "- %s @ (%s:%d)\n", fr.Func.Name(), fr.File, fr.Line)
-		}
-		t.Logf("took %v\n%s", took, buf.String())
+		buf := FramesToString(frs)
+		t.Logf("took %v\n%s", took, buf)
 	})
 	slowTest(db)
 }

@@ -14,10 +14,12 @@ var (
 )
 
 type DB struct {
-	*BBoltDB
+	b           *BBoltDB
 	marshalFn   MarshalFn
 	unmarshalFn UnmarshalFn
-	slow        *slowUpdate
+
+	onClose func()
+	slow    *slowUpdate
 }
 
 func (db *DB) SetMarshaler(marshalFn MarshalFn, unmarshalFn UnmarshalFn) {
@@ -88,7 +90,7 @@ func (db *DB) PutAny(bucket, key string, val any, marshalFn MarshalFn) error {
 }
 
 func (db *DB) View(fn func(*Tx) error) error {
-	return db.BBoltDB.View(db.getTxFn(fn))
+	return db.b.View(db.getTxFn(fn))
 }
 
 func (db *DB) Update(fn func(*Tx) error) error {
@@ -96,11 +98,11 @@ func (db *DB) Update(fn func(*Tx) error) error {
 		return db.updateSlow(fn, db.slow)
 	}
 
-	return db.BBoltDB.Update(db.getTxFn(fn))
+	return db.b.Update(db.getTxFn(fn))
 }
 
 func (db *DB) Batch(fn func(*Tx) error) error {
-	return db.BBoltDB.Batch(db.getTxFn(fn))
+	return db.b.Batch(db.getTxFn(fn))
 }
 
 func (db *DB) CreateBucket(bucket string) error {
@@ -129,16 +131,14 @@ func (db *DB) CreateBucketWithIndexBig(bucket string, idx *big.Int) error {
 	return db.CreateBucketWithIndex(bucket, idx.Uint64())
 }
 
-func (db *DB) getTxFn(fn func(*Tx) error) func(tx *BBoltTx) error {
-	return func(tx *BBoltTx) error { return fn(&Tx{tx, db}) }
-}
-
-func (db *DB) BBolt() *BBoltDB {
-	return db.BBoltDB
-}
+func (db *DB) Path() string  { return db.b.Path() }
+func (db *DB) Raw() *BBoltDB { return db.b }
 
 func (db *DB) Close() error {
-	return db.BBoltDB.Close()
+	if db.onClose != nil {
+		db.onClose()
+	}
+	return db.b.Close()
 }
 
 func (db *DB) updateSlow(fn func(*Tx) error, su *slowUpdate) (err error) {
@@ -150,10 +150,14 @@ func (db *DB) updateSlow(fn func(*Tx) error, su *slowUpdate) (err error) {
 	su.Lock()
 	defer su.Unlock()
 
-	err = db.BBoltDB.Update(db.getTxFn(fn))
+	err = db.b.Update(db.getTxFn(fn))
 	if took := time.Since(start); took >= su.min {
 		su.fn(frames, took)
 	}
 
 	return
+}
+
+func (db *DB) getTxFn(fn func(*Tx) error) func(tx *BBoltTx) error {
+	return func(tx *BBoltTx) error { return fn(&Tx{tx, db}) }
 }
