@@ -5,6 +5,7 @@ import (
 	"os"
 	"reflect"
 	"runtime"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -102,6 +103,57 @@ func TestSlow(t *testing.T) {
 		t.Logf("took %v\n%s", took, buf)
 	})
 	slowTest(db)
+}
+
+func TestCachedBucket(t *testing.T) {
+	tmp := t.TempDir()
+	db, err := Open(tmp+"/x.db", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	defer os.Remove(tmp + "/x.db")
+	N := 101
+	db.Update(func(tx *Tx) error {
+		tx.Bucket("ints", true)
+		for i := 0; i < N; i++ {
+			tx.Put("ints", strconv.Itoa(i), i)
+		}
+		return nil
+	})
+
+	cb := CachedBucket[int](db, "ints")
+
+	for i := 0; i < 10; i++ {
+		i := i + N
+		if err := cb.Put(strconv.Itoa(i), i); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for i := 0; i < N+10; i++ {
+		if v, _ := cb.Get(strconv.Itoa(i), false); v != i {
+			t.Fatalf("%d != %d", i, v)
+		}
+	}
+
+	for i := 0; i < 10; i++ {
+		i := i + N + 10
+		if v, _ := cb.Get(strconv.Itoa(i), false); v != 0 {
+			t.Fatalf("v != 0")
+		}
+	}
+
+	hit, miss, errs := cb.Stats()
+	if hit != 10 {
+		t.Fatalf("expected 10 hits, got %v", hit)
+	}
+	if miss != 111 {
+		t.Fatalf("expected 111 misses, got %v", miss)
+	}
+	if errs != 10 {
+		t.Fatalf("expected 10 errors, got %v", errs)
+	}
 }
 
 func slowTest(db *DB) {
