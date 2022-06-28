@@ -1,7 +1,9 @@
 package mbbolt
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"runtime"
 	"strings"
 	"sync"
@@ -63,4 +65,26 @@ type stringCap struct {
 
 func unsafeBytes(s string) (out []byte) {
 	return *(*[]byte)(unsafe.Pointer(&stringCap{s, len(s)}))
+}
+
+var bufPool = sync.Pool{
+	New: func() interface{} {
+		return bufio.NewWriterSize(nil, 8*1024*1024)
+	},
+}
+
+func getBuf(w io.Writer) *bufio.Writer {
+	if b, ok := w.(*bufio.Writer); ok {
+		return b
+	}
+	buf := bufPool.Get().(*bufio.Writer)
+	buf.Reset(w)
+	return buf
+}
+
+func putBufAndFlush(buf *bufio.Writer) error {
+	err := buf.Flush()
+	buf.Reset(nil)
+	bufPool.Put(buf)
+	return err
 }

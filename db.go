@@ -2,8 +2,11 @@ package mbbolt
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
 	"log"
 	"math/big"
+	"os"
 	"runtime"
 	"time"
 )
@@ -68,6 +71,12 @@ func (db *DB) Put(bucket, key string, val any) error {
 	return db.PutAny(bucket, key, val, db.marshalFn)
 }
 
+func (db *DB) Delete(bucket, key string) error {
+	return db.Update(func(tx *Tx) error {
+		return tx.Delete(bucket, key)
+	})
+}
+
 func (db *DB) GetAny(bucket, key string, out any, unmarshalFn UnmarshalFn) error {
 	return db.View(func(tx *Tx) error {
 		return tx.GetAny(bucket, key, out, unmarshalFn)
@@ -105,6 +114,14 @@ func (db *DB) Batch(fn func(*Tx) error) error {
 	return db.b.Batch(db.getTxFn(fn))
 }
 
+func (db *DB) Begin(writable bool) (*Tx, error) {
+	tx, err := db.b.Begin(writable)
+	if err != nil {
+		return nil, err
+	}
+	return &Tx{tx, db}, nil
+}
+
 func (db *DB) CreateBucket(bucket string) error {
 	bb := unsafeBytes(bucket)
 	return db.Update(func(tx *Tx) error {
@@ -129,6 +146,32 @@ func (db *DB) CreateBucketWithIndexBig(bucket string, idx *big.Int) error {
 		db.CreateBucketWithIndex(bucket, 0)
 	}
 	return db.CreateBucketWithIndex(bucket, idx.Uint64())
+}
+
+func (db *DB) BackupToFile(fp string) (n int64, err error) {
+	var f *os.File
+	if f, err = os.Create(fp); err != nil {
+		return
+	}
+	buf := getBuf(f)
+	defer func() {
+		putBufAndFlush(buf)
+		if err2 := f.Close(); err2 != nil {
+			if err != nil {
+				err2 = fmt.Errorf("multiple errors: %v, %v", err, err2)
+			}
+			err = err2
+		}
+	}()
+	return db.Backup(buf)
+}
+
+func (db *DB) Backup(w io.Writer) (n int64, err error) {
+	db.b.View(func(tx *BBoltTx) error {
+		n, err = tx.WriteTo(w)
+		return err
+	})
+	return
 }
 
 func (db *DB) Path() string  { return db.b.Path() }

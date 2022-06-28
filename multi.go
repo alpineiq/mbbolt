@@ -1,8 +1,10 @@
 package mbbolt
 
 import (
+	"archive/zip"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -13,6 +15,7 @@ import (
 	"time"
 
 	"go.etcd.io/bbolt"
+	"go.oneofone.dev/oerrs"
 )
 
 // bbolt type aliases
@@ -266,6 +269,93 @@ func (mdb *MultiDB) CloseDB(name string) (err error) {
 		delete(mdb.m, name)
 	}
 	return
+}
+
+func (mdb *MultiDB) BackupToDir(dir string, filter func(name string, db *DB) bool) (n int64, err error) {
+	mdb.mux.RLock()
+	dbNames := make([]string, 0, len(mdb.m))
+	for name, db := range mdb.m {
+		if filter == nil || filter(name, db) {
+			dbNames = append(dbNames, name)
+		}
+	}
+	mdb.mux.RUnlock()
+
+	for _, name := range dbNames {
+		mdb.mux.RLock()
+		db := mdb.m[name]
+		mdb.mux.RUnlock()
+		if db == nil {
+			continue
+		}
+
+		fp := filepath.Join(dir, name+mdb.prefix)
+		os.MkdirAll(filepath.Dir(fp), 0o755)
+
+		var n2 int64
+		if n2, err = db.BackupToFile(fp); err != nil {
+			err = oerrs.Errorf("backup %s: %v", fp, err)
+			return
+		}
+		n += n2
+	}
+	return 0, nil
+}
+
+func (mdb *MultiDB) BackupToFile(fp string, filter func(name string, db *DB) bool) (n int64, err error) {
+	var f *os.File
+	if f, err = os.Create(fp); err != nil {
+		return
+	}
+	defer func() {
+		if err2 := f.Close(); err2 != nil {
+			if err != nil {
+				err2 = fmt.Errorf("multiple errors: %v, %v", err, err2)
+			}
+			err = err2
+		}
+	}()
+	return mdb.Backup(f, filter)
+}
+
+func (mdb *MultiDB) Backup(w io.Writer, filter func(name string, db *DB) bool) (n int64, err error) {
+	mdb.mux.RLock()
+	dbNames := make([]string, 0, len(mdb.m))
+	for name, db := range mdb.m {
+		if filter == nil || filter(name, db) {
+			dbNames = append(dbNames, name)
+		}
+	}
+	mdb.mux.RUnlock()
+
+	buf := getBuf(w)
+	defer putBufAndFlush(buf)
+
+	z := zip.NewWriter(buf)
+	defer z.Close()
+
+	for _, name := range dbNames {
+		mdb.mux.RLock()
+		db := mdb.m[name]
+		mdb.mux.RUnlock()
+		if db == nil {
+			continue
+		}
+
+		fp := name + mdb.prefix
+		w, err2 := z.Create(fp)
+		if err2 != nil {
+			err = oerrs.Errorf("zip %s: %v", fp, err2)
+			return
+		}
+		var n2 int64
+		if n2, err = db.Backup(w); err != nil {
+			err = oerrs.Errorf("backup %s: %v", fp, err)
+			return
+		}
+		n += n2
+	}
+	return 0, nil
 }
 
 func (mdb *MultiDB) Close() error {

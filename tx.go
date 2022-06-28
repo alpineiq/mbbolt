@@ -46,6 +46,13 @@ func (tx *Tx) Put(bucket, key string, val any) error {
 	return tx.PutAny(bucket, key, val, tx.db.marshalFn)
 }
 
+func (tx *Tx) Delete(bucket, key string) error {
+	if b := tx.Bucket(bucket, false); b != nil {
+		return b.Delete(unsafeBytes(key))
+	}
+	return bbolt.ErrBucketNotFound
+}
+
 func (tx *Tx) GetAny(bucket, key string, out any, unmarshalFn UnmarshalFn) error {
 	if b, ok := out.(*[]byte); ok {
 		*b = tx.GetBytes(bucket, key, true)
@@ -126,10 +133,6 @@ func (tx *Tx) ForEachUpdate(bucket string, fn func(k, v []byte, setValue func(k,
 	}
 
 	return
-}
-
-func (tx *Tx) Delete(bucket, key string) error {
-	return bucketTx(tx, bucket).Delete(unsafeBytes(key))
 }
 
 func (tx *Tx) NextIndex(bucket string) (uint64, error) {

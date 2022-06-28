@@ -46,14 +46,14 @@ func (c *Cache[T]) Get(key string) (v T, err error) {
 	c.mux.Unlock()
 
 	if ok && err == nil {
-		v = genh.TypeCopy(v)
+		v = genh.Clone(v)
 	}
 
 	return
 }
 
 func (c *Cache[T]) Put(key string, v T) (err error) {
-	v = genh.TypeCopy(v)
+	v = genh.Clone(v)
 
 	c.mux.Lock()
 	defer c.mux.Unlock()
