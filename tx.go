@@ -19,72 +19,107 @@ type Tx struct {
 	db *DB
 }
 
-func (tx *Tx) Bucket(bucket string, createIfNotExists bool) *Bucket {
-	if createIfNotExists {
-		b, err := bucketTxIfNotExists(tx, bucket)
-		if err != nil {
-			log.Panicf("%s: %v", bucket, err)
-		}
-		return b
-	}
-	return bucketTx(tx, bucket)
+func (tx *Tx) CreateBucketIfNotExists(bucket string) (*Bucket, error) {
+	return tx.BBoltTx.CreateBucketIfNotExists(unsafeBytes(bucket))
 }
 
-func (tx *Tx) GetBytes(bucket, key string, clone bool) []byte {
-	return getTx(tx, bucket, key, clone)
+func (tx *Tx) Bucket(bucket string) *Bucket {
+	return tx.BBoltTx.Bucket(unsafeBytes(bucket))
+}
+
+func (tx *Tx) MustBucket(bucket string) *Bucket {
+	if b := tx.BBoltTx.Bucket(unsafeBytes(bucket)); b != nil {
+		return b
+	}
+
+	b, err := tx.CreateBucketIfNotExists(bucket)
+	if err != nil {
+		log.Panicf("%s: %v", bucket, err)
+	}
+	return b
+}
+
+func (tx *Tx) GetBytes(bucket, key string, clone bool) (out []byte) {
+	if b := tx.Bucket(bucket); b != nil {
+		if out = b.Get(unsafeBytes(key)); clone {
+			out = append([]byte(nil), out...)
+		}
+		return
+	}
+	return
 }
 
 func (tx *Tx) PutBytes(bucket, key string, val []byte) error {
-	return putTx(tx, bucket, key, val)
+	if b := tx.MustBucket(bucket); b != nil {
+		return b.Put(unsafeBytes(key), val)
+	}
+	return bbolt.ErrBucketNotFound
 }
 
-func (tx *Tx) Get(bucket, key string, out any) error {
+func (tx *Tx) GetValue(bucket, key string, out any) error {
 	return tx.GetAny(bucket, key, out, tx.db.unmarshalFn)
 }
 
-func (tx *Tx) Put(bucket, key string, val any) error {
+func (tx *Tx) PutValue(bucket, key string, val any) error {
 	return tx.PutAny(bucket, key, val, tx.db.marshalFn)
 }
 
 func (tx *Tx) Delete(bucket, key string) error {
-	if b := tx.Bucket(bucket, false); b != nil {
+	if b := tx.Bucket(bucket); b != nil {
 		return b.Delete(unsafeBytes(key))
 	}
 	return bbolt.ErrBucketNotFound
 }
 
 func (tx *Tx) GetAny(bucket, key string, out any, unmarshalFn UnmarshalFn) error {
-	if b, ok := out.(*[]byte); ok {
-		*b = tx.GetBytes(bucket, key, true)
-		return nil
+	b := tx.Bucket(bucket)
+	if b == nil {
+		return bbolt.ErrBucketNotFound
 	}
-	if unmarshalFn == nil {
-		unmarshalFn = DefaultUnmarshalFn
+
+	val := b.Get(unsafeBytes(key))
+	switch out := out.(type) {
+	case *[]byte:
+		*out = append([]byte(nil), val...)
+	// case *string:
+	// 	*out = string(val)
+	default:
+		if unmarshalFn == nil {
+			unmarshalFn = DefaultUnmarshalFn
+		}
+		return unmarshalFn(val, &out)
 	}
-	b := tx.GetBytes(bucket, key, false)
-	return unmarshalFn(b, &out)
+	return nil
 }
 
 func (tx *Tx) PutAny(bucket, key string, val any, marshalFn MarshalFn) error {
-	if b, ok := val.([]byte); ok {
+	log.Printf("%#+v", val)
+	switch val := val.(type) {
+	case []byte:
+		return tx.PutBytes(bucket, key, val)
+	// case string:
+	// 	return tx.PutBytes(bucket, key, unsafeBytes(val))
+	default:
+		if marshalFn == nil {
+			marshalFn = DefaultMarshalFn
+		}
+		b, err := marshalFn(val)
+		if err != nil {
+			return err
+		}
 		return tx.PutBytes(bucket, key, b)
 	}
-	if marshalFn == nil {
-		marshalFn = DefaultMarshalFn
-	}
-	b, err := marshalFn(val)
-	if err != nil {
-		return err
-	}
-	return tx.PutBytes(bucket, key, b)
 }
 
-func (tx *Tx) ForEach(bucket string, fn func(k, v []byte) error) error {
-	return bucketTx(tx, bucket).ForEach(fn)
+func (tx *Tx) ForEachBytes(bucket string, fn func(k, v []byte) error) error {
+	if b := tx.Bucket(bucket); b != nil {
+		return b.ForEach(fn)
+	}
+	return bbolt.ErrBucketNotFound
 }
 
 func (tx *Tx) Range(bucket string, start []byte, fn func(cursor *Cursor, k, v []byte) error, forward bool) (err error) {
-	c := bucketTx(tx, bucket).Cursor()
+	c := tx.Bucket(bucket).Cursor()
 	if forward {
 		for k, v := c.Seek(start); k != nil; k, v = c.Next() {
 			if err = fn(c, k, v); err != nil {
@@ -102,10 +137,10 @@ func (tx *Tx) Range(bucket string, start []byte, fn func(cursor *Cursor, k, v []
 }
 
 // ForEachUpdate passes a func to the loop func to allow you to set values inside the loop,
-// this is a workaround settings values inside a foreach loop which isn't allowed.
+// this is a workaround seting values inside a foreach loop which isn't allowed.
 func (tx *Tx) ForEachUpdate(bucket string, fn func(k, v []byte, setValue func(k, nv []byte)) (err error)) (err error) {
 	var updateTable map[string][]byte
-	b := bucketTx(tx, bucket)
+	b := tx.Bucket(bucket)
 
 	setValue := func(k, v []byte) {
 		if updateTable == nil {
@@ -136,7 +171,7 @@ func (tx *Tx) ForEachUpdate(bucket string, fn func(k, v []byte, setValue func(k,
 }
 
 func (tx *Tx) NextIndex(bucket string) (uint64, error) {
-	return bucketTx(tx, bucket).NextSequence()
+	return tx.Bucket(bucket).NextSequence()
 }
 
 func (tx *Tx) NextIndexBig(bucket string) (*big.Int, error) {
@@ -151,7 +186,7 @@ func GetTxAny[T any](tx *Tx, bucket, key string, unmarshalFn UnmarshalFn) (out T
 	if unmarshalFn == nil {
 		unmarshalFn = DefaultUnmarshalFn
 	}
-	err = unmarshalFn(getTx(tx, bucket, key, false), &out)
+	err = tx.GetAny(bucket, key, &out, unmarshalFn)
 	return
 }
 
@@ -164,7 +199,7 @@ func GetAny[T any](db *DB, bucket, key string, unmarshalFn UnmarshalFn) (out T, 
 }
 
 func ForEachTx[T any](tx *Tx, bucket string, fn func(key []byte, val T) error, filterFn func(k, v []byte) bool, unmarshalFn UnmarshalFn) error {
-	b := bucketTx(tx, bucket)
+	b := tx.Bucket(bucket)
 	if b == nil {
 		return bbolt.ErrBucketNotFound
 	}
@@ -188,24 +223,16 @@ func ForEachTx[T any](tx *Tx, bucket string, fn func(key []byte, val T) error, f
 	})
 }
 
-func bucketTx(tx *Tx, bucket string) *Bucket {
-	return tx.BBoltTx.Bucket(unsafeBytes(bucket))
-}
+// func getTx(tx *Tx, bucket string, id string, clone bool) (out []byte) {
+// 	out = tx.Bucket(bucket).Get(unsafeBytes(id))
+// 	if clone {
+// 		out = append([]byte(nil), out...)
+// 	}
+// 	return
+// }
 
-func bucketTxIfNotExists(tx *Tx, bucket string) (*Bucket, error) {
-	return tx.CreateBucketIfNotExists(unsafeBytes(bucket))
-}
-
-func getTx(tx *Tx, bucket string, id string, clone bool) (out []byte) {
-	out = bucketTx(tx, bucket).Get(unsafeBytes(id))
-	if clone {
-		out = append([]byte(nil), out...)
-	}
-	return
-}
-
-func putTx(tx *Tx, bucket string, id string, value []byte) error {
-	return bucketTx(tx, bucket).Put(unsafeBytes(id), value)
-}
+// func putTx(tx *Tx, bucket string, id string, value []byte) error {
+// 	return tx.Bucket(bucket).Put(unsafeBytes(id), value)
+// }
 
 func filterOk(_, _ []byte) bool { return true }

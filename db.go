@@ -55,7 +55,7 @@ func (db *DB) GetBytes(bucket, key string) (out []byte, err error) {
 
 func (db *DB) PutBytes(bucket, key string, val []byte) error {
 	return db.Update(func(tx *Tx) error {
-		b, err := tx.CreateBucketIfNotExists(unsafeBytes(bucket))
+		b, err := tx.CreateBucketIfNotExists(bucket)
 		if err != nil {
 			return err
 		}
@@ -85,17 +85,21 @@ func (db *DB) GetAny(bucket, key string, out any, unmarshalFn UnmarshalFn) error
 
 func (db *DB) PutAny(bucket, key string, val any, marshalFn MarshalFn) error {
 	// duplicated code from tx.PutAny to keep the marshaling outside of the locks
-	if b, ok := val.([]byte); ok {
+	switch val := val.(type) {
+	case []byte:
+		return db.PutBytes(bucket, key, val)
+	// case string:
+	// 	return db.PutBytes(bucket, key, unsafeBytes(val))
+	default:
+		if marshalFn == nil {
+			marshalFn = DefaultMarshalFn
+		}
+		b, err := marshalFn(val)
+		if err != nil {
+			return err
+		}
 		return db.PutBytes(bucket, key, b)
 	}
-	if marshalFn == nil {
-		marshalFn = DefaultMarshalFn
-	}
-	b, err := marshalFn(val)
-	if err != nil {
-		return err
-	}
-	return db.PutBytes(bucket, key, b)
 }
 
 func (db *DB) View(fn func(*Tx) error) error {
@@ -123,17 +127,15 @@ func (db *DB) Begin(writable bool) (*Tx, error) {
 }
 
 func (db *DB) CreateBucket(bucket string) error {
-	bb := unsafeBytes(bucket)
 	return db.Update(func(tx *Tx) error {
-		_, err := tx.CreateBucketIfNotExists(bb)
+		_, err := tx.CreateBucketIfNotExists(bucket)
 		return err
 	})
 }
 
 func (db *DB) CreateBucketWithIndex(bucket string, idx uint64) error {
-	bb := unsafeBytes(bucket)
 	return db.Update(func(tx *Tx) error {
-		b, err := tx.CreateBucketIfNotExists(bb)
+		b, err := tx.CreateBucketIfNotExists(bucket)
 		if err != nil {
 			return err
 		}
@@ -202,5 +204,7 @@ func (db *DB) updateSlow(fn func(*Tx) error, su *slowUpdate) (err error) {
 }
 
 func (db *DB) getTxFn(fn func(*Tx) error) func(tx *BBoltTx) error {
-	return func(tx *BBoltTx) error { return fn(&Tx{tx, db}) }
+	return func(tx *BBoltTx) error {
+		return fn(&Tx{tx, db})
+	}
 }

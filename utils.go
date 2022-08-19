@@ -20,7 +20,7 @@ func ConvertDB(src, dst *DB, bucketFn func(name string, b *Bucket) bool, fn Conv
 					return nil
 				}
 
-				dstBkt, err := dtx.CreateBucketIfNotExists(name)
+				dstBkt, err := dtx.BBoltTx.CreateBucketIfNotExists(name)
 				if err != nil {
 					return err
 				}
