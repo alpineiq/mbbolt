@@ -27,8 +27,8 @@ func CacheOf[T any](db *DB, bucket string, loadAll bool) *Cache[T] {
 }
 
 type Cache[T any] struct {
-	hits   atomic.Uint64
-	misses atomic.Uint64
+	hits   atomic.Int64
+	misses atomic.Int64
 	all    sync.Once
 
 	m      genh.LMap[string, T]
@@ -43,7 +43,6 @@ func (c *Cache[T]) loadAll() {
 	}); err != nil {
 		log.Printf("mbbolt: %s (%s): %v", c.db.Path(), c.bucket, err)
 	}
-	return
 }
 
 // Use clone if T is a pointer or contains slices/maps/pointers that will be modified.
@@ -59,10 +58,10 @@ func (c *Cache[T]) Get(key string) (v T, err error) {
 	})
 	if !found {
 		c.misses.Add(1)
-		v = genh.Clone(v, false)
 	} else {
 		c.hits.Add(1)
 	}
+	v = genh.Clone(v, false)
 	return
 }
 
@@ -99,4 +98,8 @@ func (c *Cache[T]) Update(fn func(tx *Tx) (key string, v T, err error)) (err err
 		}
 		return err
 	})
+}
+
+func (c *Cache[T]) Stats() (hits, misses int64) {
+	return c.hits.Load(), c.misses.Load()
 }

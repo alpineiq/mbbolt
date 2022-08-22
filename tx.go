@@ -91,7 +91,6 @@ func (tx *Tx) GetAny(bucket, key string, out any, unmarshalFn UnmarshalFn) error
 }
 
 func (tx *Tx) PutAny(bucket, key string, val any, marshalFn MarshalFn) error {
-	log.Printf("%#+v", val)
 	switch val := val.(type) {
 	case []byte:
 		return tx.PutBytes(bucket, key, val)
