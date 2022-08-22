@@ -5,7 +5,7 @@ go 1.18
 require (
 	go.etcd.io/bbolt v1.3.6
 	go.oneofone.dev/genh v0.0.0-20220818195556-5786c73a5d1f
-	go.oneofone.dev/gserv v1.0.1-0.20220711160558-3a247f8bf248
+	go.oneofone.dev/gserv v1.0.0
 )
 
 require golang.org/x/net v0.0.0-20220812174116-3211cb980234 // indirect
