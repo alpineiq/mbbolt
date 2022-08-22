@@ -3,8 +3,6 @@ package mbbolt
 import (
 	"log"
 	"math/big"
-
-	"go.etcd.io/bbolt"
 )
 
 type (
@@ -53,7 +51,7 @@ func (tx *Tx) PutBytes(bucket, key string, val []byte) error {
 	if b := tx.MustBucket(bucket); b != nil {
 		return b.Put(unsafeBytes(key), val)
 	}
-	return bbolt.ErrBucketNotFound
+	return ErrBucketNotFound
 }
 
 func (tx *Tx) GetValue(bucket, key string, out any) error {
@@ -68,13 +66,13 @@ func (tx *Tx) Delete(bucket, key string) error {
 	if b := tx.Bucket(bucket); b != nil {
 		return b.Delete(unsafeBytes(key))
 	}
-	return bbolt.ErrBucketNotFound
+	return ErrBucketNotFound
 }
 
 func (tx *Tx) GetAny(bucket, key string, out any, unmarshalFn UnmarshalFn) error {
 	b := tx.Bucket(bucket)
 	if b == nil {
-		return bbolt.ErrBucketNotFound
+		return ErrBucketNotFound
 	}
 
 	val := b.Get(unsafeBytes(key))
@@ -115,7 +113,7 @@ func (tx *Tx) ForEachBytes(bucket string, fn func(k, v []byte) error) error {
 	if b := tx.Bucket(bucket); b != nil {
 		return b.ForEach(fn)
 	}
-	return bbolt.ErrBucketNotFound
+	return ErrBucketNotFound
 }
 
 func (tx *Tx) Range(bucket string, start []byte, fn func(cursor *Cursor, k, v []byte) error, forward bool) (err error) {
@@ -201,7 +199,7 @@ func GetAny[T any](db *DB, bucket, key string, unmarshalFn UnmarshalFn) (out T, 
 func ForEachTx[T any](tx *Tx, bucket string, fn func(key []byte, val T) error, filterFn func(k, v []byte) bool, unmarshalFn UnmarshalFn) error {
 	b := tx.Bucket(bucket)
 	if b == nil {
-		return bbolt.ErrBucketNotFound
+		return ErrBucketNotFound
 	}
 
 	if unmarshalFn == nil {

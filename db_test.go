@@ -122,7 +122,7 @@ func TestCachedBucket(t *testing.T) {
 		return nil
 	})
 
-	cb := CachedBucket[int](db, "ints")
+	cb := CacheOf[int](db, "ints", true)
 
 	for i := 0; i < 10; i++ {
 		i := i + N
@@ -132,14 +132,14 @@ func TestCachedBucket(t *testing.T) {
 	}
 
 	for i := 0; i < N+10; i++ {
-		if v, _ := cb.Get(strconv.Itoa(i), false); v != i {
+		if v, _ := cb.Get(strconv.Itoa(i)); v != i {
 			t.Fatalf("%d != %d", i, v)
 		}
 	}
 
 	for i := 0; i < 10; i++ {
 		i := i + N + 10
-		if v, _ := cb.Get(strconv.Itoa(i), false); v != 0 {
+		if v, _ := cb.Get(strconv.Itoa(i)); v != 0 {
 			t.Fatalf("v != 0")
 		}
 	}

@@ -9,11 +9,14 @@ import (
 	"os"
 	"runtime"
 	"time"
+
+	"go.etcd.io/bbolt"
 )
 
 var (
 	DefaultMarshalFn   = json.Marshal
 	DefaultUnmarshalFn = json.Unmarshal
+	ErrBucketNotFound  = bbolt.ErrBucketNotFound
 )
 
 type DB struct {
