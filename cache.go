@@ -6,7 +6,10 @@ import (
 	"sync/atomic"
 
 	"go.oneofone.dev/genh"
+	"go.oneofone.dev/oerrs"
 )
+
+const ErrDeleteKey = oerrs.String("delete")
 
 func CacheOf[T any](db *DB, bucket string, loadAll bool) *Cache[T] {
 	if err := db.Update(func(tx *Tx) error {
@@ -34,6 +37,8 @@ type Cache[T any] struct {
 	m      genh.LMap[string, T]
 	db     TypedDB[T]
 	bucket string
+
+	NoBatch bool
 }
 
 func (c *Cache[T]) loadAll() {
@@ -73,10 +78,9 @@ func (c *Cache[T]) Put(key string, v T) (err error) {
 }
 
 func (c *Cache[T]) Delete(key string) (err error) {
-	return c.db.Update(func(tx *Tx) error {
+	return c.Update(func(tx *Tx) (_ string, v T, err error) {
 		tx.Delete(c.bucket, key)
-		c.m.Delete(key)
-		return err
+		return key, v, ErrDeleteKey
 	})
 }
 
@@ -92,12 +96,20 @@ func (c *Cache[T]) Update(fn func(tx *Tx) (key string, v T, err error)) (err err
 		key string
 		v   T
 	)
-	return c.db.Update(func(tx *Tx) error {
+	ufn := func(tx *Tx) error {
 		if key, v, err = fn(tx); err == nil {
 			c.m.Set(key, genh.Clone(v, false))
 		}
+		if err == ErrDeleteKey {
+			c.m.Delete(key)
+			err = nil
+		}
 		return err
-	})
+	}
+	if c.NoBatch {
+		return c.db.Update(ufn)
+	}
+	return c.db.Batch(ufn)
 }
 
 func (c *Cache[T]) Stats() (hits, misses int64) {

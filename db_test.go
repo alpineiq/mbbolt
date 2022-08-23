@@ -50,7 +50,7 @@ func TestDB(t *testing.T) {
 		{"putget", "b1", "key1", "value"},
 		{"putget", "b1", "key2", []byte("value")},
 		{"putget", "b1", "key3", &S{42, "answer", nil}},
-		{"putget", "b1", "key4", &S{42, "answer", &S{42, "answer", nil}}},
+		{"putget", "b1", "key4", &S{42, "answer", &S{24, "rewsna", nil}}},
 	}
 
 	for _, tst := range tests {

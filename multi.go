@@ -30,6 +30,22 @@ type (
 	OnSlowUpdateFn func(callers *runtime.Frames, took time.Duration)
 )
 
+var DefaultOptions = &Options{
+	Timeout:        time.Second, // don't block indefinitely if the db isn't closed
+	NoFreelistSync: true,        // improves write performance, slow load if the db isn't closed cleanly
+	NoGrowSync:     false,
+	FreelistType:   bbolt.FreelistMapType,
+
+	MaxBatchSize:  1024,
+	MaxBatchDelay: time.Second / 2,
+
+	// syscall.MAP_POPULATE on linux 2.6.23+ does sequential read-ahead
+	// which can speed up entire-database read with boltdb.
+	MmapFlags: syscall.MAP_POPULATE,
+
+	InitialMmapSize: 1 << 30, // 1gb
+}
+
 type Options struct {
 	// OpenFile is used to open files. It defaults to os.OpenFile. This option
 	// is useful for writing hermetic tests.
@@ -75,6 +91,7 @@ type Options struct {
 	// Do not sync freelist to disk. This improves the database write performance
 	// under normal operation, but requires a full database re-sync during recovery.
 	NoFreelistSync bool
+
 	// Open database in read-only mode. Uses flock(..., LOCK_SH |LOCK_NB) to
 	// grab a shared lock (UNIX).
 	ReadOnly bool
@@ -88,11 +105,31 @@ type Options struct {
 	// It prevents potential page faults, however
 	// used memory can't be reclaimed. (UNIX only)
 	Mlock bool
+
+	// MaxBatchSize is the maximum size of a batch. Default value is
+	// copied from DefaultMaxBatchSize in Open.
+	//
+	// If <=0, disables batching.
+	MaxBatchSize int
+
+	// MaxBatchDelay is the maximum delay before a batch starts.
+	// Default value is copied from DefaultMaxBatchDelay in Open.
+	//
+	// If <=0, effectively disables batching.
+	MaxBatchDelay time.Duration
+}
+
+func (opts *Options) Clone() *Options {
+	if opts == nil {
+		opts = DefaultOptions
+	}
+	cp := *opts
+	return &cp
 }
 
 func (opts *Options) BoltOpts() *bbolt.Options {
 	if opts == nil {
-		return nil
+		opts = DefaultOptions
 	}
 	return &bbolt.Options{
 		Timeout:         opts.Timeout,
@@ -109,17 +146,6 @@ func (opts *Options) BoltOpts() *bbolt.Options {
 	}
 }
 
-var DefaultBBoltOptions = Options{
-	Timeout:        time.Second, // don't block indefinitely if the db isn't closed
-	NoFreelistSync: true,        // improves write performance, slow load if the db isn't closed cleanly
-	NoGrowSync:     false,
-	FreelistType:   bbolt.FreelistMapType,
-
-	// syscall.MAP_POPULATE on linux 2.6.23+ does sequential read-ahead
-	// which can speed up entire-database read with boltdb.
-	MmapFlags: syscall.MAP_POPULATE,
-}
-
 var all struct {
 	MultiDB
 	mdbs struct {
@@ -129,10 +155,18 @@ var all struct {
 }
 
 func Open(path string, opts *Options) (*DB, error) {
+	if opts == nil {
+		opts = DefaultOptions
+	}
+
 	return all.Get(path, opts)
 }
 
 func MustOpen(path string, opts *Options) *DB {
+	if opts == nil {
+		opts = DefaultOptions
+	}
+
 	return all.MustGet(path, opts)
 }
 
@@ -155,6 +189,9 @@ func CloseAll() error {
 }
 
 func NewMultiDB(prefix, ext string, opts *Options) *MultiDB {
+	if opts == nil {
+		opts = DefaultOptions
+	}
 	mdb := &MultiDB{opts: opts, prefix: prefix, ext: ext}
 	all.mdbs.Lock()
 	all.mdbs.dbs = append(all.mdbs.dbs, mdb)
@@ -205,6 +242,13 @@ func (mdb *MultiDB) Get(name string, opts *Options) (db *DB, err error) {
 		return
 	}
 
+	if opts.MaxBatchDelay > 0 {
+		bdb.MaxBatchDelay = opts.MaxBatchDelay
+	}
+	if opts.MaxBatchSize > 0 {
+		bdb.MaxBatchSize = opts.MaxBatchSize
+	}
+
 	db = &DB{
 		b: bdb,
 
@@ -212,17 +256,22 @@ func (mdb *MultiDB) Get(name string, opts *Options) (db *DB, err error) {
 		unmarshalFn: DefaultUnmarshalFn,
 	}
 
-	if opts != nil && opts.InitDB != nil {
+	if opts.InitDB != nil {
 		if err = opts.InitDB(db); err != nil {
 			return
 		}
 	}
 
-	if opts != nil && opts.InitialBuckets != nil {
-		for _, bucket := range opts.InitialBuckets {
-			if err = db.CreateBucket(bucket); err != nil {
-				return
+	if opts.InitialBuckets != nil {
+		if err = db.Update(func(tx *Tx) error {
+			for _, bucket := range opts.InitialBuckets {
+				if _, err := tx.CreateBucketIfNotExists(bucket); err != nil {
+					return err
+				}
 			}
+			return nil
+		}); err != nil {
+			return
 		}
 	}
 
