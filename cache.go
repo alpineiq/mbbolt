@@ -2,7 +2,6 @@ package mbbolt
 
 import (
 	"log"
-	"sync"
 	"sync/atomic"
 
 	"go.oneofone.dev/genh"
@@ -24,7 +23,7 @@ func CacheOf[T any](db *DB, bucket string, loadAll bool) *Cache[T] {
 		bucket: bucket,
 	}
 	if loadAll {
-		c.all.Do(c.loadAll)
+		c.loadAll()
 	}
 	return c
 }
@@ -32,7 +31,6 @@ func CacheOf[T any](db *DB, bucket string, loadAll bool) *Cache[T] {
 type Cache[T any] struct {
 	hits   atomic.Int64
 	misses atomic.Int64
-	all    sync.Once
 
 	m      genh.LMap[string, T]
 	db     TypedDB[T]
@@ -56,7 +54,6 @@ func (c *Cache[T]) Get(key string) (v T, err error) {
 	v = c.m.MustGet(key, func() T {
 		found = false
 		if v, err = c.db.Get(c.bucket, key); err == nil {
-			v = genh.Clone(v, false)
 			c.m.Set(key, v)
 		}
 		return v
@@ -84,10 +81,11 @@ func (c *Cache[T]) Delete(key string) (err error) {
 	})
 }
 
-func (c *Cache[T]) ForEach(fn func(k string, v T) bool) {
-	c.all.Do(c.loadAll)
-	c.m.ForEach(func(k string, v T) bool {
-		return fn(k, genh.Clone(v, false))
+func (c *Cache[T]) ForEach(fn func(k string, v T) error) error {
+	return c.db.ForEach(c.bucket, func(key string, v T) error {
+		c.m.Set(key, v)
+		v = genh.Clone(v, false)
+		return fn(key, v)
 	})
 }
 
