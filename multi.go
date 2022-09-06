@@ -11,7 +11,6 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"go.etcd.io/bbolt"
@@ -30,6 +29,8 @@ type (
 	OnSlowUpdateFn func(callers *runtime.Frames, took time.Duration)
 )
 
+const MAP_POPULATE = 0x8000
+
 var DefaultOptions = &Options{
 	Timeout:        time.Second, // don't block indefinitely if the db isn't closed
 	NoFreelistSync: true,        // improves write performance, slow load if the db isn't closed cleanly
@@ -41,9 +42,9 @@ var DefaultOptions = &Options{
 
 	// syscall.MAP_POPULATE on linux 2.6.23+ does sequential read-ahead
 	// which can speed up entire-database read with boltdb.
-	MmapFlags: syscall.MAP_POPULATE,
+	MmapFlags: MAP_POPULATE,
 
-	InitialMmapSize: 1 << 30, // 1gb
+	InitialMmapSize: 1 << 29, // 512MiB
 }
 
 type Options struct {
