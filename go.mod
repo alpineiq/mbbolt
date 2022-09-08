@@ -1,6 +1,6 @@
 module go.oneofone.dev/mbbolt
 
-go 1.18
+go 1.19
 
 require (
 	go.etcd.io/bbolt v1.3.6
@@ -8,7 +8,7 @@ require (
 	go.oneofone.dev/gserv v1.0.0
 )
 
-require golang.org/x/net v0.0.0-20220812174116-3211cb980234 // indirect
+require golang.org/x/net v0.0.0-20220907135653-1e95f45603a7 // indirect
 
 require (
 	github.com/google/uuid v1.3.0
@@ -17,11 +17,11 @@ require (
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	go.oneofone.dev/oerrs v1.0.6
 	go.oneofone.dev/otk v1.0.7 // indirect
-	golang.org/x/crypto v0.0.0-20220817201139-bc19a97f63c8 // indirect
-	golang.org/x/image v0.0.0-20220722155232-062f8c9fd539 // indirect
-	golang.org/x/sys v0.0.0-20220818161305-2296e01440c6 // indirect
+	golang.org/x/crypto v0.0.0-20220829220503-c86fa9a7ed90 // indirect
+	golang.org/x/image v0.0.0-20220902085622-e7cb96979f69 // indirect
+	golang.org/x/sys v0.0.0-20220908150016-7ac13a9a928d // indirect
 	golang.org/x/text v0.3.7 // indirect
-	golang.org/x/xerrors v0.0.0-20220609144429-65e65417b02f // indirect
+	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 )
 
 replace (
