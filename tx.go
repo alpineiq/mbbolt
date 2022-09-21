@@ -70,7 +70,7 @@ func (tx *Tx) Delete(bucket, key string) error {
 }
 
 func (tx *Tx) GetAny(bucket, key string, out any, unmarshalFn UnmarshalFn) error {
-	return tx.getAny(false, key, bucket, out, unmarshalFn)
+	return tx.getAny(false, bucket, key, out, unmarshalFn)
 }
 
 func (tx *Tx) getAny(createBucket bool, bucket, key string, out any, unmarshalFn UnmarshalFn) (err error) {
