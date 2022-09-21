@@ -18,7 +18,7 @@ type TypedDB[T any] struct {
 
 func (db TypedDB[T]) ForEach(bucket string, fn func(key string, v T) error) error {
 	return db.View(func(tx *Tx) error {
-		ttx := TypedTx[T]{tx, db}
+		ttx := TypedTx[T]{tx}
 		return ttx.ForEach(bucket, fn)
 	})
 }
@@ -34,7 +34,6 @@ func (db TypedDB[T]) Put(bucket, key string, val T) error {
 
 type TypedTx[T any] struct {
 	*Tx
-	db TypedDB[T]
 }
 
 func (tx TypedTx[T]) ForEach(bucket string, fn func(key string, v T) error) error {
@@ -45,4 +44,20 @@ func (tx TypedTx[T]) ForEach(bucket string, fn func(key string, v T) error) erro
 		}
 		return fn(string(k), tv)
 	})
+}
+
+func (tx TypedTx[T]) Get(bucket, key string) (v T, err error) {
+	err = tx.Tx.GetValue(bucket, key, &v)
+	return
+}
+
+func (tx TypedTx[T]) Put(bucket, key string, v T) error {
+	return tx.Tx.PutValue(bucket, key, v)
+}
+
+func (tx TypedTx[T]) MustGet(bucket, key string, def T) (v T) {
+	if err := tx.Tx.getAny(true, bucket, key, &v, tx.db.unmarshalFn); err != nil {
+		return def
+	}
+	return
 }

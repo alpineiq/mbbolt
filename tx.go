@@ -70,9 +70,19 @@ func (tx *Tx) Delete(bucket, key string) error {
 }
 
 func (tx *Tx) GetAny(bucket, key string, out any, unmarshalFn UnmarshalFn) error {
-	b := tx.Bucket(bucket)
-	if b == nil {
-		return ErrBucketNotFound
+	return tx.getAny(false, key, bucket, out, unmarshalFn)
+}
+
+func (tx *Tx) getAny(createBucket bool, bucket, key string, out any, unmarshalFn UnmarshalFn) (err error) {
+	var b *Bucket
+	if createBucket {
+		if b, err = tx.CreateBucketIfNotExists(bucket); err != nil {
+			return
+		}
+	} else {
+		if b = tx.Bucket(bucket); b == nil {
+			return ErrBucketNotFound
+		}
 	}
 
 	val := b.Get(unsafeBytes(key))
