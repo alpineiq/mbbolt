@@ -96,7 +96,9 @@ func (c *Cache[T]) Update(fn func(tx *Tx) (key string, v T, err error)) (err err
 	)
 	ufn := func(tx *Tx) error {
 		if key, v, err = fn(tx); err == nil {
-			c.m.Set(key, genh.Clone(v, false))
+			if err = tx.PutValue(c.bucket, key, v); err == nil {
+				c.m.Set(key, genh.Clone(v, false))
+			}
 		}
 		if err == ErrDeleteKey {
 			c.m.Delete(key)
