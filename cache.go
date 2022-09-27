@@ -2,6 +2,7 @@ package mbbolt
 
 import (
 	"log"
+	"sync"
 	"sync/atomic"
 
 	"go.oneofone.dev/genh"
@@ -23,7 +24,7 @@ func CacheOf[T any](db *DB, bucket string, loadAll bool) *Cache[T] {
 		bucket: bucket,
 	}
 	if loadAll {
-		c.loadAll()
+		c.Sync()
 	}
 	return c
 }
@@ -37,9 +38,11 @@ type Cache[T any] struct {
 	bucket string
 
 	NoBatch bool
+
+	loadOnce sync.Once
 }
 
-func (c *Cache[T]) loadAll() {
+func (c *Cache[T]) Sync() {
 	if err := c.db.ForEach(c.bucket, func(key string, v T) error {
 		c.m.Set(key, v)
 		return nil
@@ -81,12 +84,13 @@ func (c *Cache[T]) Delete(key string) (err error) {
 	})
 }
 
-func (c *Cache[T]) ForEach(fn func(k string, v T) error) error {
-	return c.db.ForEach(c.bucket, func(key string, v T) error {
-		c.m.Set(key, v)
-		v = genh.Clone(v, false)
-		return fn(key, v)
+func (c *Cache[T]) ForEach(fn func(k string, v T) error) (err error) {
+	c.loadOnce.Do(c.Sync)
+	c.m.ForEach(func(k string, v T) bool {
+		err = fn(k, v)
+		return err == nil
 	})
+	return
 }
 
 func (c *Cache[T]) Update(fn func(tx *Tx) (key string, v T, err error)) (err error) {
