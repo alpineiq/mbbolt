@@ -44,7 +44,7 @@ func TestClient(t *testing.T) {
 		}
 
 		if s.A != sp.A || s.B != sp.B || s.C != sp.C || s.S.A != sp.S.A || s.S.B != sp.S.B || s.S.C != sp.S.C {
-			t.Fatal("invalid data")
+			t.Fatal("invalid data", s, sp)
 		}
 
 		found := false

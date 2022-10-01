@@ -63,9 +63,9 @@ func (s *Server) init() *Server {
 		return nil
 	})
 
-	s.s.POST("/tx/begin/:db", s.txBegin)
-	s.s.DELETE("/tx/commit/:db", s.txCommit)
-	s.s.DELETE("/tx/rollback/:db", s.txRollback)
+	s.s.POST("/beginTx/:db", s.txBegin)
+	s.s.DELETE("/commitTx/:db", s.txCommit)
+	s.s.DELETE("/rollbackTx/:db", s.txRollback)
 
 	// gserv.MsgPackPut(s.s, "/update", s.handleLock)
 	s.s.POST("/tx/:db/nextSeq/:bucket", s.txNextSeq)

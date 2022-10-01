@@ -69,6 +69,10 @@ func (tx *Tx) Delete(bucket, key string) error {
 	return ErrBucketNotFound
 }
 
+func (tx *Tx) DeleteBucket(bucket string) error {
+	return tx.BBoltTx.DeleteBucket([]byte(bucket))
+}
+
 func (tx *Tx) GetAny(bucket, key string, out any, unmarshalFn UnmarshalFn) error {
 	return tx.getAny(false, bucket, key, out, unmarshalFn)
 }

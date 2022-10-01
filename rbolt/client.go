@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"net/http"
+	"reflect"
 	"strings"
 
 	"github.com/vmihailenco/msgpack/v5"
@@ -23,17 +24,22 @@ func NewClient(addr string) *Client {
 	}
 }
 
-type Client struct {
-	c     *http.Client
-	locks genh.LMap[string, bool]
-	addr  string
-}
+type (
+	bucketKeyVal = genh.LMultiMap[string, string, any]
+	Client       struct {
+		c     *http.Client
+		locks genh.LMap[string, *Tx]
+		m     genh.LMap[string, *bucketKeyVal]
+		addr  string
+	}
+)
 
 func (c *Client) Close() error {
 	var el oerrs.ErrorList
-	for _, db := range c.locks.Keys() {
-		el.PushIf(c.Rollback(db))
-	}
+	c.locks.ForEach(func(k string, tx *Tx) bool {
+		el.PushIf(tx.Rollback())
+		return true
+	})
 	return el.Err()
 }
 
@@ -65,8 +71,20 @@ func (c *Client) do(method, url string, body []byte, out any) error {
 	return genh.DecodeMsgpack(resp.Body, out)
 }
 
-func (c *Client) Get(db, bucket, key string, v any) error {
-	return c.do("GET", "r/"+db+"/"+bucket+"/"+key, nil, v)
+func (c *Client) cache(db string) *bucketKeyVal {
+	return c.m.MustGet(db, func() *bucketKeyVal {
+		return &bucketKeyVal{}
+	})
+}
+
+func (c *Client) Get(db, bucket, key string, v any) (err error) {
+	rv := reflect.ValueOf(v).Elem()
+	vv := c.cache(db).MustGet(bucket, key, func() any {
+		err = c.do("GET", "r/"+db+"/"+bucket+"/"+key, nil, v)
+		return v
+	})
+	rv.Set(reflect.ValueOf(vv).Elem())
+	return
 }
 
 func (c *Client) Put(db, bucket, key string, v any) error {
@@ -74,11 +92,20 @@ func (c *Client) Put(db, bucket, key string, v any) error {
 	if err != nil {
 		return err
 	}
-	return c.do("PUT", "r/"+db+"/"+bucket+"/"+key, b, nil)
+
+	if err := c.do("PUT", "r/"+db+"/"+bucket+"/"+key, b, nil); err != nil {
+		return err
+	}
+	c.cache(db).Set(bucket, key, v)
+	return nil
 }
 
 func (c *Client) Delete(db, bucket, key string) error {
-	return c.do("DELETE", "r/"+db+"/"+bucket+"/"+key, nil, nil)
+	if err := c.do("DELETE", "r/"+db+"/"+bucket+"/"+key, nil, nil); err != nil {
+		return err
+	}
+	c.cache(db).DeleteChild(bucket, key)
+	return nil
 }
 
 func (c *Client) Update(db string, fn func(tx *Tx) error) error {
@@ -87,56 +114,29 @@ func (c *Client) Update(db string, fn func(tx *Tx) error) error {
 		return err
 	}
 	if err := fn(tx); err != nil {
-		c.Rollback(db)
+		if err2 := tx.Rollback(); err != nil {
+			err = oerrs.Errorf("%v: %w", err, err2)
+		}
 		return err
 	}
-	return c.Commit(db)
+	return tx.Commit()
 }
 
 func (c *Client) Begin(db string) (*Tx, error) {
-	if err := c.do("POST", "tx/begin/"+db, nil, nil); err != nil {
+	if err := c.do("POST", "beginTx/"+db, nil, nil); err != nil {
 		return nil, err
 	}
-	c.locks.Set(db, true)
-	return &Tx{c, "tx/" + db + "/"}, nil
-}
-
-func (c *Client) Commit(db string) error {
-	gotLock := false
-	c.locks.Update(func(m map[string]bool) {
-		if gotLock = m[db]; gotLock {
-			delete(m, db)
-		}
-	})
-	if !gotLock {
-		return oerrs.Errorf("no lock for %s", db)
-	}
-	if err := c.do("DELETE", "tx/commit/"+db, nil, nil); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (c *Client) Rollback(db string) error {
-	gotLock := false
-	c.locks.Update(func(m map[string]bool) {
-		if gotLock = m[db]; gotLock {
-			delete(m, db)
-		}
-	})
-	if !gotLock {
-		return oerrs.Errorf("no lock for %s", db)
-	}
-	if err := c.do("DELETE", "tx/rollback/"+db, nil, nil); err != nil {
-		return err
-	}
-	return nil
+	tx := &Tx{c: c, db: db, prefix: "tx/" + db + "/"}
+	c.locks.Set(db, tx)
+	return tx, nil
 }
 
 type Tx struct {
-	c *Client
-
+	c      *Client
+	db     string
 	prefix string
+
+	updates []func()
 }
 
 func (tx *Tx) NextIndex(bucket string) (id uint64, err error) {
@@ -153,11 +153,58 @@ func (tx *Tx) Put(bucket, key string, v any) error {
 	if err != nil {
 		return err
 	}
-	return tx.c.do("PUT", tx.prefix+bucket+"/"+key, b, nil)
+	if err := tx.c.do("PUT", tx.prefix+bucket+"/"+key, b, nil); err != nil {
+		return err
+	}
+	tx.updates = append(tx.updates, func() {
+		tx.c.cache(tx.db).Set(bucket, key, v)
+	})
+	return nil
 }
 
 func (tx *Tx) Delete(bucket, key string) error {
-	return tx.c.do("DELETE", tx.prefix+bucket+"/"+key, nil, nil)
+	if err := tx.c.do("DELETE", tx.prefix+bucket+"/"+key, nil, nil); err != nil {
+		return nil
+	}
+	tx.updates = append(tx.updates, func() {
+		tx.c.cache(tx.db).DeleteChild(bucket, key)
+	})
+	return nil
+}
+
+func (tx *Tx) Commit() error {
+	gotLock := false
+	tx.c.locks.Update(func(m map[string]*Tx) {
+		if gotLock = m[tx.db] == tx; gotLock {
+			delete(m, tx.db)
+		}
+	})
+	if !gotLock {
+		return oerrs.Errorf("no lock for %s", tx.db)
+	}
+	if err := tx.c.do("DELETE", "commitTx/"+tx.db, nil, nil); err != nil {
+		return err
+	}
+	for _, fn := range tx.updates {
+		fn()
+	}
+	return nil
+}
+
+func (tx *Tx) Rollback() error {
+	gotLock := false
+	tx.c.locks.Update(func(m map[string]*Tx) {
+		if gotLock = m[tx.db] == tx; gotLock {
+			delete(m, tx.db)
+		}
+	})
+	if !gotLock {
+		return oerrs.Errorf("no lock for %s", tx.db)
+	}
+	if err := tx.c.do("DELETE", "rollbackTx/"+tx.db, nil, nil); err != nil {
+		return err
+	}
+	return nil
 }
 
 type decCloser struct {
