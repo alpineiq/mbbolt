@@ -178,7 +178,7 @@ func (tx *Tx) ForEachUpdate(bucket string, fn func(k, v []byte, setValue func(k,
 }
 
 func (tx *Tx) NextIndex(bucket string) (uint64, error) {
-	return tx.Bucket(bucket).NextSequence()
+	return tx.MustBucket(bucket).NextSequence()
 }
 
 func (tx *Tx) NextIndexBig(bucket string) (*big.Int, error) {
