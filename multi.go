@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"go.etcd.io/bbolt"
+	"go.oneofone.dev/genh"
 	"go.oneofone.dev/oerrs"
 )
 
@@ -408,16 +409,17 @@ func (mdb *MultiDB) Backup(w io.Writer, filter func(name string, db *DB) bool) (
 
 func (mdb *MultiDB) Close() error {
 	mdb.mux.Lock()
-	defer mdb.mux.Unlock()
+	m := genh.MapClone(mdb.m)
+	mdb.m = nil
+	mdb.mux.Unlock()
 	var buf strings.Builder
-	for k, db := range mdb.m {
+	for k, db := range m {
 		if err := db.Close(); err != nil {
 			if buf.Len() > 0 {
 				buf.WriteString(", ")
 			}
 			fmt.Fprintf(&buf, "%s: %v", k, db)
 		}
-		delete(mdb.m, k)
 	}
 	if buf.Len() > 0 {
 		return errors.New(buf.String())
