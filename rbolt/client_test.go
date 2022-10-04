@@ -6,8 +6,6 @@ import (
 	"strconv"
 	"testing"
 	"time"
-
-	"go.oneofone.dev/oerrs"
 )
 
 func init() {
@@ -15,14 +13,15 @@ func init() {
 }
 
 type S struct {
+	S *S
 	A string
 	B int64
 	C float64
-	S *S
 }
 
 func TestClient(t *testing.T) {
 	rbs := NewServer(t.TempDir(), nil)
+	rbs.MaxUnusedLock = time.Second / 10
 	defer rbs.Close()
 	go rbs.Run(context.Background(), ":0")
 
@@ -74,24 +73,22 @@ func TestClient(t *testing.T) {
 		c := NewClient(url)
 		defer c.Close()
 		if err := c.Update("db", func(tx *Tx) error {
-			tx.NextIndex("b")
-			tx.NextIndex("b")
-			tx.NextIndex("b")
-			tx.NextIndex("b")
-			id, err := tx.NextIndex("b")
-			if err != nil {
-				return err
-			}
-			if id != 5 {
-				return oerrs.Errorf("expected 5, got %d", id)
-			}
-			if err := tx.Put("b", strconv.Itoa(int(1000+id)), &S{A: "test", S: &S{B: int64(id)}}); err != nil {
-				return err
+			for i := 0; i < 100; i++ {
+				id, err := tx.NextIndex("b")
+				if err != nil {
+					return err
+				}
+				if err := tx.Put("b", strconv.Itoa(int(id)+1000), &S{A: "test", S: &S{B: int64(id)}}); err != nil {
+					return err
+				}
 			}
 
 			found := false
 			if err := ForEachTx(tx, "db", "b", func(key string, ss *S) error {
 				if key == "1005" {
+					if ss.S == nil || ss.S.B != 5 {
+						t.Fatal("unexpected value", ss, ss.S)
+					}
 					found = true
 				}
 				return nil
@@ -135,6 +132,23 @@ func TestClient(t *testing.T) {
 
 		if err := c.Get("db", "b", "1005", &s); err == nil {
 			t.Fatal(err)
+		}
+	})
+	t.Run("AutoUnlock", func(t *testing.T) {
+		c := NewClient(url)
+		defer c.Close()
+		err := c.Update("db", func(tx *Tx) error {
+			if err := tx.Put("b", "1005", &S{A: "test", S: &S{B: 5}}); err != nil {
+				return err
+			}
+			time.Sleep(time.Second / 2)
+			if err := tx.Put("b", "1005", &S{A: "test", S: &S{B: 5}}); err == nil {
+				t.Fatal("expected error")
+			}
+			return nil
+		})
+		if err == nil {
+			t.Fatal("expected error")
 		}
 	})
 }

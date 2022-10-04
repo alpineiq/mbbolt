@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"reflect"
 	"strings"
+	"time"
 
 	"github.com/vmihailenco/msgpack/v5"
 	"go.oneofone.dev/genh"
@@ -21,6 +22,9 @@ func NewClient(addr string) *Client {
 	return &Client{
 		c:    gserv.H2Client(),
 		addr: addr,
+
+		RetryCount: 100,
+		RetrySleep: time.Millisecond * 100,
 	}
 }
 
@@ -31,6 +35,9 @@ type (
 		locks genh.LMap[string, *Tx]
 		m     genh.LMap[string, *bucketKeyVal]
 		addr  string
+
+		RetryCount int
+		RetrySleep time.Duration
 	}
 )
 
@@ -43,12 +50,20 @@ func (c *Client) Close() error {
 	return el.Err()
 }
 
-func (c *Client) do(method, url string, body []byte, out any) error {
-	req, _ := http.NewRequest(method, c.addr+url, bytes.NewReader(body))
-	resp, err := c.c.Do(req)
-	if err != nil {
-		return err
+func (c *Client) do(method, url string, body []byte, out any) (err error) {
+	var resp *http.Response
+	retry := c.RetryCount
+	for {
+		req, _ := http.NewRequest(method, c.addr+url, bytes.NewReader(body))
+		if resp, err = c.c.Do(req); err == nil {
+			break
+		}
+		if retry--; retry < 1 {
+			return oerrs.ErrorCallerf(2, "failed after %d retires: %w", c.RetryCount, err)
+		}
+		time.Sleep(c.RetrySleep)
 	}
+
 	// log.Println(method, url, string(body))
 	if resp.StatusCode != http.StatusOK {
 		var r gserv.MsgpResponse
@@ -83,6 +98,7 @@ func (c *Client) Get(db, bucket, key string, v any) (err error) {
 		err = c.do("GET", "r/"+db+"/"+bucket+"/"+key, nil, v)
 		return v
 	})
+	vv = genh.Clone(vv, true)
 	rv.Set(reflect.ValueOf(vv).Elem())
 	return
 }
@@ -235,7 +251,9 @@ func ForEach[T any](c *Client, db, bucket string, fn func(key string, v T) error
 		if err := genh.UnmarshalMsgpack(kv[1], &v); err != nil {
 			return err
 		}
-		if err := fn(otk.UnsafeString(kv[0]), v); err != nil {
+		key := otk.UnsafeString(kv[0])
+		c.cache(db).Set(bucket, key, v)
+		if err := fn(key, v); err != nil {
 			return err
 		}
 
@@ -260,7 +278,9 @@ func ForEachTx[T any](tx *Tx, db, bucket string, fn func(key string, v T) error)
 		if err := genh.UnmarshalMsgpack(kv[1], &v); err != nil {
 			return err
 		}
-		if err := fn(otk.UnsafeString(kv[0]), v); err != nil {
+		key := otk.UnsafeString(kv[0])
+		tx.c.cache(db).Set(bucket, key, v)
+		if err := fn(key, v); err != nil {
 			return err
 		}
 

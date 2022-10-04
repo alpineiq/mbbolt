@@ -12,10 +12,10 @@ require golang.org/x/net v0.0.0-20220930213112-107f3e3c3b0b // indirect
 
 require (
 	github.com/gorilla/securecookie v1.1.1 // indirect
-	github.com/vmihailenco/msgpack/v5 v5.3.5 // indirect
+	github.com/vmihailenco/msgpack/v5 v5.3.5
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	go.oneofone.dev/oerrs v1.0.6
-	go.oneofone.dev/otk v1.0.7 // indirect
+	go.oneofone.dev/otk v1.0.7
 	golang.org/x/crypto v0.0.0-20220926161630-eccd6366d1be // indirect
 	golang.org/x/image v0.0.0-20220902085622-e7cb96979f69 // indirect
 	golang.org/x/sys v0.0.0-20220908150016-7ac13a9a928d // indirect

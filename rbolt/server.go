@@ -3,9 +3,11 @@ package rbolt
 import (
 	"context"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.oneofone.dev/genh"
@@ -19,6 +21,8 @@ var (
 
 	endOfList = [2][]byte{nil, nil}
 	errorKey  = []byte("___error")
+
+	lg = log.New(log.Default().Writer(), "", log.Lshortfile)
 )
 
 const Version = 202203022
@@ -27,6 +31,8 @@ func NewServer(dbPath string, dbOpts *mbbolt.Options) *Server {
 	srv := &Server{
 		s:   gserv.New(gserv.WriteTimeout(time.Minute*10), gserv.ReadTimeout(time.Minute*10), gserv.SetCatchPanics(false)),
 		mdb: mbbolt.NewMultiDB(dbPath, ".mdb", dbOpts),
+
+		MaxUnusedLock: time.Minute,
 	}
 	return srv.init()
 }
@@ -41,19 +47,22 @@ type stats struct {
 	Locks       uint32
 }
 
-type (
-	locksMap = map[string]*mbbolt.Tx
+type serverTx struct {
+	sync.Mutex
+	*mbbolt.Tx
+	last atomic.Int64
+}
 
+type (
 	Server struct {
 		s   *gserv.Server
 		mdb *mbbolt.MultiDB
 
-		ActiveConnectionSem chan struct{}
-
 		mux  sync.Mutex
-		lock genh.LMap[string, *mbbolt.Tx]
-
+		lock genh.LMap[string, *serverTx]
 		stats
+
+		MaxUnusedLock time.Duration
 	}
 )
 
@@ -99,7 +108,10 @@ func (s *Server) txBegin(ctx *gserv.Context) gserv.Response {
 		return gserv.NewMsgpErrorResponse(http.StatusInternalServerError, err.Error())
 	}
 
-	s.lock.Set(dbName, tx)
+	tts := &serverTx{Tx: tx}
+	tts.last.Store(time.Now().UnixNano())
+	s.lock.Set(dbName, tts)
+	go s.checkLock(dbName)
 	return nil
 }
 
@@ -111,19 +123,38 @@ func (s *Server) txRollback(ctx *gserv.Context) gserv.Response {
 	return s.unlock(ctx.Param("db"), false)
 }
 
-func (s *Server) unlock(dbName string, commit bool) gserv.Response {
-	tx := s.lock.Swap(dbName, nil)
+func (s *Server) checkLock(dbName string) {
+	for tx := s.lock.Get(dbName); tx != nil; tx = s.lock.Get(dbName) {
+		if time.Duration(time.Now().UnixNano()-tx.last.Load()) > s.MaxUnusedLock {
+			lg.Printf("deleted lock after timeout: %s", dbName)
+			tx.Rollback()
+			s.lock.Delete(dbName)
+		}
+	}
+}
+
+func (s *Server) withTx(dbName string, rm bool, fn func(tx *mbbolt.Tx) error) error {
+	tx := s.lock.Get(dbName)
 	if tx == nil {
-		return RespNotFound
+		return gserv.ErrNotFound
+	}
+	tx.Lock()
+	defer tx.Unlock()
+	if rm {
+		s.lock.Delete(dbName)
 	}
 
-	var err error
-	if commit {
-		err = tx.Commit()
-	} else {
-		err = tx.Rollback()
-	}
+	tx.last.Store(time.Now().UnixNano())
+	return fn(tx.Tx)
+}
 
+func (s *Server) unlock(dbName string, commit bool) gserv.Response {
+	err := s.withTx(dbName, true, func(tx *mbbolt.Tx) error {
+		if commit {
+			return tx.Commit()
+		}
+		return tx.Rollback()
+	})
 	if err != nil {
 		return gserv.NewMsgpErrorResponse(http.StatusInternalServerError, err)
 	}
@@ -133,19 +164,17 @@ func (s *Server) unlock(dbName string, commit bool) gserv.Response {
 
 func (s *Server) txNextSeq(ctx *gserv.Context) gserv.Response {
 	dbName, bucket := ctx.Param("db"), ctx.Param("bucket")
-	tx := s.lock.Get(dbName)
-	if tx == nil {
-		return RespNotFound
-	}
-
 	var seq uint64
 	var err error
 	genh.DecodeMsgpack(ctx, &seq)
-	if seq > 0 {
-		err = tx.SetNextIndex(bucket, seq)
-	} else {
-		seq, err = tx.NextIndex(bucket)
-	}
+	err = s.withTx(dbName, false, func(tx *mbbolt.Tx) error {
+		if seq > 0 {
+			err = tx.SetNextIndex(bucket, seq)
+		} else {
+			seq, err = tx.NextIndex(bucket)
+		}
+		return err
+	})
 	if err != nil {
 		return gserv.NewMsgpErrorResponse(http.StatusInternalServerError, err)
 	}
@@ -153,15 +182,15 @@ func (s *Server) txNextSeq(ctx *gserv.Context) gserv.Response {
 	return nil
 }
 
-func (s *Server) txGet(ctx *gserv.Context) gserv.Response {
+func (s *Server) txGet(ctx *gserv.Context) (resp gserv.Response) {
 	dbName, bucket, key := ctx.Param("db"), ctx.Param("bucket"), ctx.Param("key")
-	tx := s.lock.Get(dbName)
-	if tx == nil {
-		return RespNotFound
-	}
-	if b := tx.GetBytes(bucket, key, true); b != nil {
-		ctx.Write(b)
-	} else {
+	if err := s.withTx(dbName, false, func(tx *mbbolt.Tx) error {
+		if b := tx.GetBytes(bucket, key, true); b != nil {
+			_, err := ctx.Write(b)
+			return err
+		}
+		return mbbolt.ErrBucketNotFound
+	}); err != nil {
 		return RespNotFound
 	}
 	return nil
@@ -169,15 +198,14 @@ func (s *Server) txGet(ctx *gserv.Context) gserv.Response {
 
 func (s *Server) txForEach(ctx *gserv.Context) gserv.Response {
 	dbName, bucket := ctx.Param("db"), ctx.Param("bucket")
-	tx := s.lock.Get(dbName)
-	if tx == nil {
-		return RespNotFound
-	}
-
 	enc := genh.NewMsgpackEncoder(ctx)
 
-	if err := tx.ForEachBytes(bucket, func(key, val []byte) error {
-		return enc.Encode([2][]byte{key, val})
+	if err := s.withTx(dbName, false, func(tx *mbbolt.Tx) error {
+		return tx.ForEachBytes(bucket, func(key, val []byte) error {
+			err := enc.Encode([2][]byte{key, val})
+			ctx.Flush()
+			return err
+		})
 	}); err != nil {
 		enc.Encode([2][]byte{errorKey, []byte(err.Error())})
 	}
@@ -189,17 +217,14 @@ func (s *Server) txForEach(ctx *gserv.Context) gserv.Response {
 
 func (s *Server) txPut(ctx *gserv.Context) gserv.Response {
 	dbName, bucket, key := ctx.Param("db"), ctx.Param("bucket"), ctx.Param("key")
-	tx := s.lock.Get(dbName)
-	if tx == nil {
-		return RespNotFound
-	}
-
 	val, err := io.ReadAll(ctx.Req.Body)
 	if err != nil {
 		return gserv.NewMsgpErrorResponse(http.StatusInternalServerError, err)
 	}
 
-	if err := tx.PutBytes(bucket, key, val); err != nil {
+	if err := s.withTx(dbName, false, func(tx *mbbolt.Tx) error {
+		return tx.PutBytes(bucket, key, val)
+	}); err != nil {
 		return gserv.NewMsgpErrorResponse(http.StatusInternalServerError, err)
 	}
 	return nil
@@ -207,14 +232,12 @@ func (s *Server) txPut(ctx *gserv.Context) gserv.Response {
 
 func (s *Server) txDel(ctx *gserv.Context) gserv.Response {
 	dbName, bucket, key := ctx.Param("db"), ctx.Param("bucket"), ctx.Param("key")
-	tx := s.lock.Get(dbName)
-	if tx == nil {
-		return RespNotFound
-	}
-
-	if err := tx.Delete(bucket, key); err != nil {
+	if err := s.withTx(dbName, false, func(tx *mbbolt.Tx) error {
+		return tx.Delete(bucket, key)
+	}); err != nil {
 		return gserv.NewMsgpErrorResponse(http.StatusInternalServerError, err)
 	}
+
 	return nil
 }
 
@@ -273,6 +296,7 @@ func (s *Server) forEach(ctx *gserv.Context) gserv.Response {
 		})
 	}) != nil {
 		enc.Encode([2][]byte{errorKey, []byte(err.Error())})
+		ctx.Flush()
 	}
 	enc.Encode(endOfList)
 	return nil
