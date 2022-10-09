@@ -4,7 +4,7 @@ go 1.19
 
 require (
 	go.etcd.io/bbolt v1.3.6
-	go.oneofone.dev/genh v0.0.0-20220928191559-3ece510613de
+	go.oneofone.dev/genh v0.0.0-20221009230543-ee7571e1180e
 	go.oneofone.dev/gserv v1.0.1-0.20221005034716-202f34ffc2cd
 )
 
@@ -18,7 +18,7 @@ require (
 	go.oneofone.dev/otk v1.0.7
 	golang.org/x/crypto v0.0.0-20221005025214-4161e89ecf1b // indirect
 	golang.org/x/image v0.0.0-20220902085622-e7cb96979f69 // indirect
-	golang.org/x/sys v0.0.0-20220928140112-f11e5e49a4ec // indirect
+	golang.org/x/sys v0.0.0-20221006211917-84dc82d7e875 // indirect
 	golang.org/x/text v0.3.7 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 )
