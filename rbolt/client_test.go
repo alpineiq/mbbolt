@@ -2,6 +2,8 @@ package rbolt
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log"
 	"strconv"
 	"testing"
@@ -20,9 +22,12 @@ type S struct {
 }
 
 func TestClient(t *testing.T) {
+	const dbName = "shinyDB"
+	const bucketName = "someBucket"
+
 	rbs := NewServer(t.TempDir(), nil)
 	rbs.MaxUnusedLock = time.Second / 10
-	defer rbs.Close()
+	// defer rbs.Close()
 	go rbs.Run(context.Background(), ":0")
 
 	time.Sleep(time.Millisecond * 100)
@@ -30,15 +35,16 @@ func TestClient(t *testing.T) {
 	t.Log("srv addr", url)
 
 	t.Run("NoTx", func(t *testing.T) {
+		t.Parallel()
 		c := NewClient(url)
 		defer c.Close()
 		sp := &S{A: "test", B: 123, C: 123.456, S: &S{A: "-", B: 321, C: 654.321}}
-		if err := c.Put("db", "bucket", "key", sp); err != nil {
+		if err := c.Put(dbName, bucketName, "key", sp); err != nil {
 			t.Fatal(err)
 		}
 
 		var s S
-		if err := c.Get("db", "bucket", "key", &s); err != nil {
+		if err := c.Get(dbName, bucketName, "key", &s); err != nil {
 			t.Fatal(err)
 		}
 
@@ -47,7 +53,7 @@ func TestClient(t *testing.T) {
 		}
 
 		found := false
-		if err := ForEach(c, "db", "bucket", func(key string, ss *S) error {
+		if err := ForEach(c, dbName, bucketName, func(key string, ss *S) error {
 			if key == "key" && ss.A == "test" && ss.B == 123 && ss.C == 123.456 {
 				found = true
 			}
@@ -60,49 +66,51 @@ func TestClient(t *testing.T) {
 			t.Fatal("foreach failed")
 		}
 
-		if err := c.Delete("db", "bucket", "key"); err != nil {
+		if err := c.Delete(dbName, bucketName, "key"); err != nil {
 			t.Fatal(err)
 		}
 
-		if err := c.Get("db", "bucket", "key", &s); err == nil {
-			t.Fatal("expected error")
+		if err := c.Get(dbName, bucketName, "key", &s); err == nil {
+			t.Fatal("expected error", s)
 		}
 	})
 
 	t.Run("Tx", func(t *testing.T) {
+		t.Parallel()
 		c := NewClient(url)
 		defer c.Close()
-		if err := c.Update("db", func(tx *Tx) error {
+		if err := c.Update(dbName, func(tx *Tx) error {
+			tx.SetNextIndex(bucketName, 100)
 			for i := 0; i < 100; i++ {
-				id, err := tx.NextIndex("b")
+				id, err := tx.NextIndex(bucketName)
 				if err != nil {
 					return err
 				}
-				if err := tx.Put("b", strconv.Itoa(int(id)+1000), &S{A: "test", S: &S{B: int64(id)}}); err != nil {
+				if err := tx.Put(bucketName, strconv.Itoa(int(id)+1000), &S{A: "test", S: &S{B: int64(id)}}); err != nil {
 					return err
 				}
 			}
 
 			found := false
-			if err := ForEachTx(tx, "db", "b", func(key string, ss *S) error {
-				if key == "1005" {
-					if ss.S == nil || ss.S.B != 5 {
-						t.Fatal("unexpected value", ss, ss.S)
+			if err := ForEachTx(tx, dbName, bucketName, func(key string, ss *S) error {
+				if key == "1105" {
+					if ss.S == nil || ss.S.B != 105 {
+						return fmt.Errorf("unexpected value: %+v %+v", ss, ss.S)
 					}
 					found = true
 				}
 				return nil
 			}); err != nil {
-				t.Fatal(err)
+				return err
 			}
 
 			if !found {
-				t.Fatal("foreach failed")
+				return errors.New("foreach failed")
 			}
 
 			var s S
-			if err := tx.Get("b", "1005", &s); err != nil || s.A != "test" || s.S.B != 5 {
-				t.Fatal("expected error", s)
+			if err := tx.Get(bucketName, "1105", &s); err != nil || s.A != "test" || s.S.B != 105 {
+				return fmt.Errorf("unexpected error: %w %+v %+v", err, s, s.S)
 			}
 			return nil
 		}); err != nil {
@@ -110,19 +118,19 @@ func TestClient(t *testing.T) {
 		}
 
 		var s S
-		if err := c.Get("db", "b", "1005", &s); err != nil {
+		if err := c.Get(dbName, bucketName, "1105", &s); err != nil {
 			t.Fatal(err)
 		}
-		if s.S == nil || s.S.B != 5 {
-			t.Fatal("expected s.S.B == 5")
+		if s.S == nil || s.S.B != 105 {
+			t.Fatal("expected s.S.B == 105")
 		}
 
-		if err := c.Update("db", func(tx *Tx) error {
-			if err := tx.Delete("b", "1005"); err != nil {
+		if err := c.Update(dbName, func(tx *Tx) error {
+			if err := tx.Delete(bucketName, "1105"); err != nil {
 				return err
 			}
 			var s S
-			if err := tx.Get("b", "1005", &s); err == nil {
+			if err := tx.Get(bucketName, "1105", &s); err == nil {
 				t.Fatal("expected error", s)
 			}
 			return nil
@@ -130,25 +138,53 @@ func TestClient(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if err := c.Get("db", "b", "1005", &s); err == nil {
+		if err := c.Get(dbName, bucketName, "1105", &s); err == nil {
 			t.Fatal(err)
 		}
 	})
 	t.Run("AutoUnlock", func(t *testing.T) {
+		t.Parallel()
 		c := NewClient(url)
 		defer c.Close()
-		err := c.Update("db", func(tx *Tx) error {
-			if err := tx.Put("b", "1005", &S{A: "test", S: &S{B: 5}}); err != nil {
+		err := c.Update(dbName, func(tx *Tx) error {
+			if err := tx.Put(bucketName, "1005", &S{A: "test", S: &S{B: 5}}); err != nil {
 				return err
 			}
-			time.Sleep(time.Second / 2)
-			if err := tx.Put("b", "1005", &S{A: "test", S: &S{B: 5}}); err == nil {
+			time.Sleep(time.Second)
+			if err := tx.Put(bucketName, "1005", &S{A: "test", S: &S{B: 5}}); err == nil {
 				t.Fatal("expected error")
 			}
 			return nil
 		})
 		if err == nil {
 			t.Fatal("expected error")
+		}
+	})
+
+	t.Run("Auth", func(t *testing.T) {
+		rbs.AuthKey = "da3b361b0a16be5c31e5ef87eb4a48dcd3c1d0c9"
+		defer func() {
+			rbs.AuthKey = ""
+		}()
+		c := NewClient(url)
+		// c.AuthKey = rbs.AuthKey
+		defer c.Close()
+
+		if err := c.Put(dbName, bucketName, "11111", &S{A: "test", S: &S{B: 5}}); err == nil {
+			t.Fatal("expected error")
+		}
+		c.AuthKey = rbs.AuthKey
+
+		if err := c.Put(dbName, bucketName, "11111", &S{A: "test", S: &S{B: 5}}); err != nil {
+			t.Fatal("unexpected error")
+		}
+
+		var s S
+		if err := c.Get(dbName, bucketName, "11111", &s); err != nil {
+			t.Fatal("unexpected error", err, s)
+		}
+		if s.S == nil || s.S.B != 5 {
+			t.Fatal("expected s.S.B == 5", s.S)
 		}
 	})
 }

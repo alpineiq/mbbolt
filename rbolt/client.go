@@ -38,6 +38,7 @@ type (
 
 		RetryCount int
 		RetrySleep time.Duration
+		AuthKey    string
 	}
 )
 
@@ -50,11 +51,20 @@ func (c *Client) Close() error {
 	return el.Err()
 }
 
-func (c *Client) do(method, url string, body []byte, out any) (err error) {
+func (c *Client) do(method, url string, body, out any) (err error) {
 	var resp *http.Response
+	var bodyBytes []byte
+	if body != nil {
+		if bodyBytes, err = genh.MarshalMsgpack(body); err != nil {
+			return
+		}
+	}
 	retry := c.RetryCount
 	for {
-		req, _ := http.NewRequest(method, c.addr+url, bytes.NewReader(body))
+		req, _ := http.NewRequest(method, c.addr+url, bytes.NewReader(bodyBytes))
+		if c.AuthKey != "" {
+			req.Header.Set("Authorization", c.AuthKey)
+		}
 		if resp, err = c.c.Do(req); err == nil {
 			break
 		}
@@ -66,11 +76,14 @@ func (c *Client) do(method, url string, body []byte, out any) (err error) {
 
 	// log.Println(method, url, string(body))
 	if resp.StatusCode != http.StatusOK {
-		var r gserv.MsgpResponse
-		if err := genh.DecodeMsgpack(resp.Body, &r); err != nil {
-			return oerrs.Errorf("error decoding response for %s %s: %v", method, url, err)
+		if resp.StatusCode == http.StatusUnauthorized {
+			return oerrs.Errorf("unauthorized")
 		}
-		return r.Errors[0]
+		var r gserv.Error
+		if err := genh.DecodeMsgpack(resp.Body, &r); err != nil {
+			return oerrs.Errorf("error decoding response for %s %s (%v): %v", method, url, resp.StatusCode, err)
+		}
+		return r
 	}
 
 	if out, ok := out.(*decCloser); ok {
@@ -98,18 +111,16 @@ func (c *Client) Get(db, bucket, key string, v any) (err error) {
 		err = c.do("GET", "r/"+db+"/"+bucket+"/"+key, nil, v)
 		return v
 	})
+	if err != nil {
+		c.cache(db).DeleteChild(bucket, key)
+	}
 	vv = genh.Clone(vv, true)
 	rv.Set(reflect.ValueOf(vv).Elem())
 	return
 }
 
 func (c *Client) Put(db, bucket, key string, v any) error {
-	b, err := genh.MarshalMsgpack(v)
-	if err != nil {
-		return err
-	}
-
-	if err := c.do("PUT", "r/"+db+"/"+bucket+"/"+key, b, nil); err != nil {
+	if err := c.do("PUT", "r/"+db+"/"+bucket+"/"+key, v, nil); err != nil {
 		return err
 	}
 	c.cache(db).Set(bucket, key, v)
@@ -156,7 +167,12 @@ type Tx struct {
 }
 
 func (tx *Tx) NextIndex(bucket string) (id uint64, err error) {
-	err = tx.c.do("POST", tx.prefix+"nextSeq/"+bucket, nil, &id)
+	err = tx.c.do("POST", tx.prefix+"seq/"+bucket, 0, &id)
+	return
+}
+
+func (tx *Tx) SetNextIndex(bucket string, id uint64) (err error) {
+	err = tx.c.do("POST", tx.prefix+"seq/"+bucket, id, nil)
 	return
 }
 
@@ -165,11 +181,7 @@ func (tx *Tx) Get(bucket, key string, v any) error {
 }
 
 func (tx *Tx) Put(bucket, key string, v any) error {
-	b, err := genh.MarshalMsgpack(v)
-	if err != nil {
-		return err
-	}
-	if err := tx.c.do("PUT", tx.prefix+bucket+"/"+key, b, nil); err != nil {
+	if err := tx.c.do("PUT", tx.prefix+bucket+"/"+key, v, nil); err != nil {
 		return err
 	}
 	tx.updates = append(tx.updates, func() {
