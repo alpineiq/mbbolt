@@ -77,6 +77,8 @@ func (s *Server) init() *Server {
 		return nil
 	})
 
+	gserv.MsgpGet(s.s, "/stats", s.getStats, false)
+	gserv.JSONGet(s.s, "/stats.json", s.getStats, false)
 	gserv.MsgpPost(s.s, "/beginTx/:db", s.txBegin, false)
 	gserv.MsgpDelete(s.s, "/commitTx/:db", s.txCommit, false)
 	gserv.MsgpDelete(s.s, "/rollbackTx/:db", s.txRollback, false)
@@ -99,6 +101,10 @@ func (s *Server) init() *Server {
 
 func (s *Server) Run(ctx context.Context, addr string) error {
 	return s.s.Run(ctx, addr)
+}
+
+func (s *Server) getStats(ctx *gserv.Context) (stats, error) {
+	return s.stats, nil
 }
 
 func (s *Server) txBegin(ctx *gserv.Context, req any) (string, error) {
@@ -259,8 +265,7 @@ func (s *Server) nextSeq(ctx *gserv.Context, seq uint64) (uint64, error) {
 	}); err != nil {
 		return 0, gserv.NewError(http.StatusInternalServerError, err)
 	}
-	genh.EncodeMsgpack(ctx, seq)
-	return 0, nil
+	return seq, nil
 }
 
 func (s *Server) get(ctx *gserv.Context) ([]byte, error) {
@@ -322,7 +327,7 @@ func (s *Server) del(ctx *gserv.Context) (string, error) {
 	if err = db.Delete(bucket, key); err != nil {
 		return "", gserv.NewError(http.StatusInternalServerError, err)
 	}
-	return "", nil
+	return "OK", nil
 }
 
 func splitPath(p string) (out []string) {
