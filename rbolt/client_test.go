@@ -197,9 +197,12 @@ func TestClient(t *testing.T) {
 		if err := c.Put(dbName, bucketName+"2", "string", "str"); err != nil {
 			t.Fatal(err)
 		}
-
-		c.ClearCache()
 		var str string
+		if err := c.Get(dbName, bucketName+"2", "string", &str); err != nil || str != "str" {
+			t.Fatal("unexpected error", err, str)
+		}
+		c.ClearCache()
+
 		if err := c.Get(dbName, bucketName+"2", "string", &str); err != nil || str != "str" {
 			t.Fatal("unexpected error", err, str)
 		}

@@ -113,12 +113,12 @@ func (c *Client) cache(db string) *bucketKeyVal {
 func (c *Client) Get(db, bucket, key string, v any) (err error) {
 	vv := c.cache(db).MustGet(bucket, key, func() any {
 		err = c.do("GET", "r/"+db+"/"+bucket+"/"+key, nil, v)
-		return v
+		return reflect.ValueOf(v).Elem().Interface()
 	})
 	if err != nil {
 		c.cache(db).DeleteChild(bucket, key)
 	}
-	genh.ReflectClone(reflect.ValueOf(v).Elem(), reflect.ValueOf(vv).Elem(), true)
+	genh.ReflectClone(reflect.ValueOf(v).Elem(), reflect.Indirect(reflect.ValueOf(vv)), true)
 	return
 }
 
