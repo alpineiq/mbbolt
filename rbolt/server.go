@@ -18,9 +18,6 @@ var (
 	RespOK       = gserv.NewMsgpResponse(nil).Cached()
 	RespNotFound = gserv.NewError(http.StatusNotFound, "Not Found")
 
-	endOfList = [2][]byte{nil, nil}
-	errorKey  = []byte("___error")
-
 	lg = log.New(log.Default().Writer(), "", log.Lshortfile)
 )
 
@@ -103,8 +100,8 @@ func (s *Server) Run(ctx context.Context, addr string) error {
 	return s.s.Run(ctx, addr)
 }
 
-func (s *Server) getStats(ctx *gserv.Context) (stats, error) {
-	return s.stats, nil
+func (s *Server) getStats(ctx *gserv.Context) (*stats, error) {
+	return &s.stats, nil
 }
 
 func (s *Server) txBegin(ctx *gserv.Context, req any) (string, error) {
@@ -213,17 +210,13 @@ func (s *Server) txForEach(ctx *gserv.Context) gserv.Response {
 	dbName, bucket := ctx.Param("db"), ctx.Param("bucket")
 	enc := genh.NewMsgpackEncoder(ctx)
 
-	if err := s.withTx(dbName, false, func(tx *mbbolt.Tx) error {
+	s.withTx(dbName, false, func(tx *mbbolt.Tx) error {
 		return tx.ForEachBytes(bucket, func(key, val []byte) error {
 			err := enc.Encode([2][]byte{key, val})
 			ctx.Flush()
 			return err
 		})
-	}); err != nil {
-		enc.Encode([2][]byte{errorKey, []byte(err.Error())})
-	}
-
-	enc.Encode(endOfList)
+	})
 
 	return nil
 }
@@ -292,15 +285,13 @@ func (s *Server) forEach(ctx *gserv.Context) gserv.Response {
 	}
 
 	enc := genh.NewMsgpackEncoder(ctx)
-	if db.View(func(tx *mbbolt.Tx) error {
+	db.View(func(tx *mbbolt.Tx) error {
 		return tx.ForEachBytes(bucket, func(key, val []byte) error {
-			return enc.Encode([2][]byte{key, val})
+			err := enc.Encode([2][]byte{key, val})
+			ctx.Flush()
+			return err
 		})
-	}) != nil {
-		enc.Encode([2][]byte{errorKey, []byte(err.Error())})
-		ctx.Flush()
-	}
-	enc.Encode(endOfList)
+	})
 	return nil
 }
 

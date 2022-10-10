@@ -3,6 +3,7 @@ package rbolt
 import (
 	"bytes"
 	"io"
+	"log"
 	"net/http"
 	"reflect"
 	"strings"
@@ -51,10 +52,14 @@ func (c *Client) Close() error {
 	return el.Err()
 }
 
+func (c *Client) ClearCache() {
+	c.m.Clear()
+}
+
 func (c *Client) do(method, url string, body, out any) (err error) {
 	var resp *http.Response
-	var bodyBytes []byte
-	if body != nil {
+	bodyBytes, _ := body.([]byte)
+	if bodyBytes == nil {
 		if bodyBytes, err = genh.MarshalMsgpack(body); err != nil {
 			return
 		}
@@ -106,7 +111,6 @@ func (c *Client) cache(db string) *bucketKeyVal {
 }
 
 func (c *Client) Get(db, bucket, key string, v any) (err error) {
-	rv := reflect.ValueOf(v).Elem()
 	vv := c.cache(db).MustGet(bucket, key, func() any {
 		err = c.do("GET", "r/"+db+"/"+bucket+"/"+key, nil, v)
 		return v
@@ -114,8 +118,7 @@ func (c *Client) Get(db, bucket, key string, v any) (err error) {
 	if err != nil {
 		c.cache(db).DeleteChild(bucket, key)
 	}
-	vv = genh.Clone(vv, true)
-	rv.Set(reflect.ValueOf(vv).Elem())
+	genh.ReflectClone(reflect.ValueOf(v).Elem(), reflect.ValueOf(vv).Elem(), true)
 	return
 }
 
@@ -254,13 +257,17 @@ func ForEach[T any](c *Client, db, bucket string, fn func(key string, v T) error
 	for {
 		var kv [2][]byte
 		if err := dec.Decode(&kv); err != nil {
+			if err == io.EOF {
+				return nil
+			}
 			return err
 		}
-		if kv[0] == nil && kv[1] == nil {
-			return nil
+		if len(kv[0]) == 0 {
+			continue
 		}
 		var v T
 		if err := genh.UnmarshalMsgpack(kv[1], &v); err != nil {
+			log.Printf("%v %v", kv, err)
 			return err
 		}
 		key := otk.UnsafeString(kv[0])
@@ -281,10 +288,13 @@ func ForEachTx[T any](tx *Tx, db, bucket string, fn func(key string, v T) error)
 	for {
 		var kv [2][]byte
 		if err := dec.Decode(&kv); err != nil {
+			if err == io.EOF {
+				return nil
+			}
 			return err
 		}
-		if kv[0] == nil && kv[1] == nil {
-			return nil
+		if len(kv[0]) == 0 {
+			continue
 		}
 		var v T
 		if err := genh.UnmarshalMsgpack(kv[1], &v); err != nil {

@@ -14,17 +14,13 @@ require (
 	github.com/gorilla/securecookie v1.1.1 // indirect
 	github.com/vmihailenco/msgpack/v5 v5.3.5
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
-	go.oneofone.dev/oerrs v1.0.6
+	go.oneofone.dev/oerrs v1.0.7-0.20221003171156-2726106fc553
 	go.oneofone.dev/otk v1.0.7
-	golang.org/x/crypto v0.0.0-20221005025214-4161e89ecf1b // indirect
+	golang.org/x/crypto v0.0.0-20221010152910-d6f0a8c073c2 // indirect
 	golang.org/x/image v0.0.0-20220902085622-e7cb96979f69 // indirect
 	golang.org/x/sys v0.0.0-20221006211917-84dc82d7e875 // indirect
 	golang.org/x/text v0.3.7 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 )
 
-replace (
-	github.com/vmihailenco/msgpack/v5 v5.3.5 => github.com/alpineiq/msgpack/v5 v5.3.5-no-partial-alloc
-	go.oneofone.dev/genh => ../genh
-	go.oneofone.dev/gserv => ../gserv
-)
+replace github.com/vmihailenco/msgpack/v5 v5.3.5 => github.com/alpineiq/msgpack/v5 v5.3.5-no-partial-alloc

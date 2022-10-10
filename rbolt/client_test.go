@@ -84,9 +84,11 @@ func TestClient(t *testing.T) {
 			for i := 0; i < 100; i++ {
 				id, err := tx.NextIndex(bucketName)
 				if err != nil {
+					t.Error(err)
 					return err
 				}
 				if err := tx.Put(bucketName, strconv.Itoa(int(id)+1000), &S{A: "test", S: &S{B: int64(id)}}); err != nil {
+					t.Error(err)
 					return err
 				}
 			}
@@ -101,6 +103,7 @@ func TestClient(t *testing.T) {
 				}
 				return nil
 			}); err != nil {
+				t.Error(err)
 				return err
 			}
 
@@ -150,9 +153,9 @@ func TestClient(t *testing.T) {
 			if err := tx.Put(bucketName, "1005", &S{A: "test", S: &S{B: 5}}); err != nil {
 				return err
 			}
-			time.Sleep(time.Second)
+			time.Sleep(time.Second * 2)
 			if err := tx.Put(bucketName, "1005", &S{A: "test", S: &S{B: 5}}); err == nil {
-				t.Fatal("expected error")
+				t.Error("expected error")
 			}
 			return nil
 		})
@@ -185,6 +188,20 @@ func TestClient(t *testing.T) {
 		}
 		if s.S == nil || s.S.B != 5 {
 			t.Fatal("expected s.S.B == 5", s.S)
+		}
+	})
+
+	t.Run("NoPtrBug", func(t *testing.T) {
+		c := NewClient(url)
+		defer c.Close()
+		if err := c.Put(dbName, bucketName+"2", "string", "str"); err != nil {
+			t.Fatal(err)
+		}
+
+		c.ClearCache()
+		var str string
+		if err := c.Get(dbName, bucketName+"2", "string", &str); err != nil || str != "str" {
+			t.Fatal("unexpected error", err, str)
 		}
 	})
 }
