@@ -69,6 +69,10 @@ func (tx *Tx) Delete(bucket, key string) error {
 	return ErrBucketNotFound
 }
 
+func (tx *Tx) DeleteBucket(bucket string) error {
+	return tx.BBoltTx.DeleteBucket([]byte(bucket))
+}
+
 func (tx *Tx) GetAny(bucket, key string, out any, unmarshalFn UnmarshalFn) error {
 	return tx.getAny(false, bucket, key, out, unmarshalFn)
 }
@@ -175,6 +179,10 @@ func (tx *Tx) ForEachUpdate(bucket string, fn func(k, v []byte, setValue func(k,
 	}
 
 	return
+}
+
+func (tx *Tx) SetNextIndex(bucket string, idx uint64) error {
+	return tx.MustBucket(bucket).SetSequence(idx)
 }
 
 func (tx *Tx) NextIndex(bucket string) (uint64, error) {

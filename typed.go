@@ -1,5 +1,15 @@
 package mbbolt
 
+type TxBase interface {
+	GetBytes(bucket, key string, clone bool) (out []byte)
+	ForEachBytes(bucket string, fn func(k, v []byte) error) error
+	PutBytes(bucket, key string, val []byte) error
+	Delete(bucket, key string) error
+	DeleteBucket(bucket string) error
+}
+
+var _ TxBase = (*Tx)(nil)
+
 func OpenTDB[T any](path string, opts *Options) (db TypedDB[T], err error) {
 	db.DB, err = Open(path, opts)
 	return
