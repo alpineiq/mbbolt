@@ -91,12 +91,12 @@ func (s *Server) init() *Server {
 	gserv.MsgpGet(s.s, "/stats", s.getStats, false)
 	gserv.JSONGet(s.s, "/stats.json", s.getStats, false)
 
-	gserv.MsgpPost(s.s, "/tx/begin/:db", s.txBegin, false)
-	gserv.MsgpDelete(s.s, "/tx/commit/:db", s.txCommit, false)
-	gserv.MsgpDelete(s.s, "/tx/rollback/:db", s.txRollback, false)
-	gserv.MsgpPost(s.s, "/tx/:db", s.handleTx, false)
+	gserv.MsgpPost(s.s, "/tx/begin/*db", s.txBegin, false)
+	gserv.MsgpDelete(s.s, "/tx/commit/*db", s.txCommit, false)
+	gserv.MsgpDelete(s.s, "/tx/rollback/*db", s.txRollback, false)
+	gserv.MsgpPost(s.s, "/tx/*db", s.handleTx, false)
 
-	gserv.MsgpPost(s.s, "/noTx/:db", s.handleNoTx, false)
+	gserv.MsgpPost(s.s, "/noTx/*db", s.handleNoTx, false)
 
 	return s
 }
@@ -111,7 +111,9 @@ func (s *Server) getStats(ctx *gserv.Context) (*stats, error) {
 
 func (s *Server) txBegin(ctx *gserv.Context, req any) (string, error) {
 	dbName := ctx.Param("db")
-
+	if dbName == "" {
+		dbName = "default"
+	}
 	db, err := s.mdb.Get(dbName, nil)
 	if err != nil {
 		return "", gserv.NewError(http.StatusInternalServerError, err)
@@ -140,6 +142,9 @@ func (s *Server) txRollback(ctx *gserv.Context) (string, error) {
 }
 
 func (s *Server) unlock(dbName string, commit bool) (string, error) {
+	if dbName == "" {
+		dbName = "default"
+	}
 	err := s.withTx(dbName, true, func(tx *mbbolt.Tx) error {
 		if commit {
 			return tx.Commit()
@@ -179,6 +184,9 @@ func (s *Server) checkLock(dbName string) {
 }
 
 func (s *Server) withTx(dbName string, rm bool, fn func(tx *mbbolt.Tx) error) error {
+	if dbName == "" {
+		dbName = "default"
+	}
 	tx := s.lock.Get(dbName)
 	if tx == nil {
 		return gserv.ErrNotFound
@@ -244,6 +252,9 @@ func (s *Server) handleTx(ctx *gserv.Context, req *srvReq) (out []byte, err erro
 
 func (s *Server) handleNoTx(ctx *gserv.Context, req *srvReq) (out []byte, err error) {
 	dbName := ctx.Param("db")
+	if dbName == "" {
+		dbName = "default"
+	}
 	var db *mbbolt.DB
 	if db, err = s.mdb.Get(dbName, nil); err != nil {
 		return

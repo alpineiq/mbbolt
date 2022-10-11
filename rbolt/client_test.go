@@ -210,17 +210,17 @@ func TestClient(t *testing.T) {
 		// c.AuthKey = rbs.AuthKey
 		defer c.Close()
 		c.AuthKey = ""
-		if err := c.Put(dbName, bucketName, "11111", &S{A: "test", S: &S{B: 5}}); err == nil {
+		if err := c.Put("", bucketName, "11111", &S{A: "test", S: &S{B: 5}}); err == nil {
 			t.Fatal("expected error")
 		}
 		c.AuthKey = rbs.AuthKey
 
-		if err := c.Put(dbName, bucketName, "11111", &S{A: "test", S: &S{B: 5}}); err != nil {
+		if err := c.Put("", bucketName, "11111", &S{A: "test", S: &S{B: 5}}); err != nil {
 			t.Fatal("unexpected error")
 		}
 
 		var s S
-		if err := c.Get(dbName, bucketName, "11111", &s); err != nil {
+		if err := c.Get("", bucketName, "11111", &s); err != nil {
 			t.Fatal("unexpected error", err, s)
 		}
 		if s.S == nil || s.S.B != 5 {
