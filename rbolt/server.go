@@ -28,7 +28,7 @@ func NewServer(dbPath string, dbOpts *mbbolt.Options) *Server {
 	srv := &Server{
 		s:   gserv.New(gserv.WriteTimeout(time.Minute*10), gserv.ReadTimeout(time.Minute*10), gserv.SetCatchPanics(true)),
 		mdb: mbbolt.NewMultiDB(dbPath, ".db", dbOpts),
-		j:   NewJournal(dbPath, "logs/2006/01/02", true),
+		j:   newJournal(dbPath, "logs/2006/01/02", true),
 
 		MaxUnusedLock: time.Minute,
 	}
@@ -62,7 +62,7 @@ type (
 	Server struct {
 		s   *gserv.Server
 		mdb *mbbolt.MultiDB
-		j   *Journal
+		j   *journal
 
 		mux   sync.Mutex
 		lock  genh.LMap[string, *serverTx]
@@ -124,7 +124,7 @@ func (s *Server) txBegin(ctx *gserv.Context, req any) (string, error) {
 	if err != nil {
 		return "", gserv.NewError(http.StatusInternalServerError, err)
 	}
-	s.j.Write(&JournalEntry{Op: "txBegin", DB: dbName}, err)
+	s.j.Write(&journalEntry{Op: "txBegin", DB: dbName}, err)
 
 	tts := &serverTx{Tx: tx}
 	tts.last.Store(time.Now().UnixNano())
@@ -150,7 +150,7 @@ func (s *Server) unlock(dbName string, commit bool) (string, error) {
 		}
 		return tx.Rollback()
 	})
-	je := &JournalEntry{DB: dbName}
+	je := &journalEntry{DB: dbName}
 	if commit {
 		je.Op = "txCommit"
 	} else {
@@ -205,7 +205,7 @@ func (s *Server) txNextSeq(ctx *gserv.Context, seq uint64) (uint64, error) {
 		}
 		return
 	})
-	je := &JournalEntry{Op: "txNextSeq", DB: dbName, Bucket: bucket, Value: seq}
+	je := &journalEntry{Op: "txNextSeq", DB: dbName, Bucket: bucket, Value: seq}
 	s.j.Write(je, err)
 	if err != nil {
 		return 0, gserv.NewError(http.StatusInternalServerError, err)
@@ -224,7 +224,7 @@ func (s *Server) txGet(ctx *gserv.Context) (out []byte, err error) {
 		out, err = nil, gserv.ErrNotFound
 	}
 
-	je := &JournalEntry{Op: "txGet", DB: dbName, Bucket: bucket, Key: key, Value: out}
+	je := &journalEntry{Op: "txGet", DB: dbName, Bucket: bucket, Key: key, Value: out}
 	s.j.Write(je, err)
 
 	return
@@ -242,7 +242,7 @@ func (s *Server) txForEach(ctx *gserv.Context) gserv.Response {
 		})
 	})
 
-	je := &JournalEntry{Op: "txForEach", DB: dbName, Bucket: bucket}
+	je := &journalEntry{Op: "txForEach", DB: dbName, Bucket: bucket}
 	s.j.Write(je, err)
 
 	return nil
@@ -250,7 +250,7 @@ func (s *Server) txForEach(ctx *gserv.Context) gserv.Response {
 
 func (s *Server) txPut(ctx *gserv.Context, v []byte) (_ string, err error) {
 	dbName, bucket, key := ctx.Param("db"), ctx.Param("bucket"), ctx.Param("key")
-	je := &JournalEntry{Op: "txPut", DB: dbName, Bucket: bucket, Key: key, Value: v}
+	je := &journalEntry{Op: "txPut", DB: dbName, Bucket: bucket, Key: key, Value: v}
 	defer s.j.Write(je, err)
 
 	if err := s.withTx(dbName, false, func(tx *mbbolt.Tx) error {
@@ -263,7 +263,7 @@ func (s *Server) txPut(ctx *gserv.Context, v []byte) (_ string, err error) {
 
 func (s *Server) txDel(ctx *gserv.Context) (_ string, err error) {
 	dbName, bucket, key := ctx.Param("db"), ctx.Param("bucket"), ctx.Param("key")
-	je := &JournalEntry{Op: "txDelete", DB: dbName, Bucket: bucket, Key: key}
+	je := &journalEntry{Op: "txDelete", DB: dbName, Bucket: bucket, Key: key}
 	defer s.j.Write(je, err)
 
 	if err := s.withTx(dbName, false, func(tx *mbbolt.Tx) error {
@@ -292,7 +292,7 @@ func (s *Server) nextSeq(ctx *gserv.Context, seq uint64) (_ uint64, err error) {
 	if err != nil {
 		seq, err = 0, gserv.NewError(http.StatusInternalServerError, err)
 	}
-	je := &JournalEntry{Op: "nextSeq", DB: dbName, Bucket: bucket, Value: seq}
+	je := &journalEntry{Op: "nextSeq", DB: dbName, Bucket: bucket, Value: seq}
 	s.j.Write(je, err)
 	return
 }
@@ -309,7 +309,7 @@ func (s *Server) get(ctx *gserv.Context) ([]byte, error) {
 		out, err = nil, gserv.ErrNotFound
 	}
 
-	je := &JournalEntry{Op: "get", DB: dbName, Bucket: bucket, Key: key, Value: out}
+	je := &journalEntry{Op: "get", DB: dbName, Bucket: bucket, Key: key, Value: out}
 	s.j.Write(je, err)
 
 	return out, err
@@ -332,7 +332,7 @@ func (s *Server) forEach(ctx *gserv.Context) gserv.Response {
 		})
 	})
 
-	je := &JournalEntry{Op: "forEach", DB: dbName, Bucket: bucket}
+	je := &journalEntry{Op: "forEach", DB: dbName, Bucket: bucket}
 	s.j.Write(je, err)
 
 	return nil
@@ -340,7 +340,7 @@ func (s *Server) forEach(ctx *gserv.Context) gserv.Response {
 
 func (s *Server) put(ctx *gserv.Context, v []byte) (_ string, err error) {
 	dbName, bucket, key := ctx.Param("db"), ctx.Param("bucket"), ctx.Param("key")
-	je := &JournalEntry{Op: "put", DB: dbName, Bucket: bucket, Key: key, Value: v}
+	je := &journalEntry{Op: "put", DB: dbName, Bucket: bucket, Key: key, Value: v}
 	defer s.j.Write(je, err)
 
 	db, err := s.mdb.Get(dbName, nil)
@@ -356,7 +356,7 @@ func (s *Server) put(ctx *gserv.Context, v []byte) (_ string, err error) {
 
 func (s *Server) del(ctx *gserv.Context) (_ string, err error) {
 	dbName, bucket, key := ctx.Param("db"), ctx.Param("bucket"), ctx.Param("key")
-	je := &JournalEntry{Op: "delete", DB: dbName, Bucket: bucket, Key: key}
+	je := &journalEntry{Op: "delete", DB: dbName, Bucket: bucket, Key: key}
 	defer s.j.Write(je, err)
 
 	db, err := s.mdb.Get(dbName, nil)

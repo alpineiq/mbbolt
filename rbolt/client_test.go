@@ -218,7 +218,7 @@ func TestClient(t *testing.T) {
 		t.Log(fn)
 		cnt := 0
 		for {
-			var je JournalEntry
+			var je journalEntry
 			if err := dec.Decode(&je); err != nil {
 				if !errors.Is(err, io.EOF) {
 					t.Error(err)

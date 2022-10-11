@@ -12,7 +12,7 @@ import (
 	"go.oneofone.dev/genh"
 )
 
-type JournalEntry struct {
+type journalEntry struct {
 	TS     int64  `json:"ts,omitempty"`
 	Op     string `json:"op,omitempty"`
 	DB     string `json:"db,omitempty"`
@@ -22,7 +22,7 @@ type JournalEntry struct {
 	Value  any    `json:"value,omitempty"`
 }
 
-type Journal struct {
+type journal struct {
 	base    string
 	fileFmt string
 	useJSON bool
@@ -35,15 +35,15 @@ type Journal struct {
 	}
 }
 
-func NewJournal(base, fileFmt string, useJSON bool) *Journal {
-	return &Journal{
+func newJournal(base, fileFmt string, useJSON bool) *journal {
+	return &journal{
 		base:    base,
 		fileFmt: fileFmt,
 		useJSON: useJSON,
 	}
 }
 
-func (j *Journal) writer() (_ io.Writer, err error) {
+func (j *journal) writer() (_ io.Writer, err error) {
 	nfn := time.Now().Format(j.fileFmt)
 	if j.useJSON {
 		nfn += ".json"
@@ -81,7 +81,7 @@ func (j *Journal) writer() (_ io.Writer, err error) {
 	return j.f, err
 }
 
-func (j *Journal) Write(v *JournalEntry, err error) error {
+func (j *journal) Write(v *journalEntry, err error) error {
 	v.TS = time.Now().Unix()
 	if err != nil {
 		v.Error = err.Error()
@@ -97,7 +97,7 @@ func (j *Journal) Write(v *JournalEntry, err error) error {
 	return j.enc.Encode(v)
 }
 
-func (j *Journal) Close() error {
+func (j *journal) Close() error {
 	j.mux.Lock()
 	defer j.mux.Unlock()
 	if f := j.f; f != nil {
