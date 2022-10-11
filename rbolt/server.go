@@ -47,9 +47,14 @@ func (s *Server) Close() error {
 }
 
 type stats struct {
-	ActiveLocks genh.AtomicInt64 `json:"activeLocks,omitempty"`
-	Locks       genh.AtomicInt64 `json:"locks,omitempty"`
-	Timeouts    genh.AtomicInt64 `json:"timeouts,omitempty"`
+	ActiveLocks genh.AtomicInt64 `json:"activeLocks"`
+	Locks       genh.AtomicInt64 `json:"locks"`
+	Timeouts    genh.AtomicInt64 `json:"timeouts"`
+	Gets        genh.AtomicInt64 `json:"gets"`
+	Puts        genh.AtomicInt64 `json:"puts"`
+	Deletes     genh.AtomicInt64 `json:"deletes"`
+	Commits     genh.AtomicInt64 `json:"commits"`
+	Rollbacks   genh.AtomicInt64 `json:"rollbacks"`
 }
 
 type serverTx struct {
@@ -85,22 +90,13 @@ func (s *Server) init() *Server {
 
 	gserv.MsgpGet(s.s, "/stats", s.getStats, false)
 	gserv.JSONGet(s.s, "/stats.json", s.getStats, false)
-	gserv.MsgpPost(s.s, "/beginTx/:db", s.txBegin, false)
-	gserv.MsgpDelete(s.s, "/commitTx/:db", s.txCommit, false)
-	gserv.MsgpDelete(s.s, "/rollbackTx/:db", s.txRollback, false)
 
-	// gserv.MsgPackPut(s.s, "/update", s.handleLock)
-	gserv.MsgpPost(s.s, "/tx/:db/seq/:bucket", s.txNextSeq, false)
-	s.s.GET("/tx/:db/:bucket", s.txForEach)
-	gserv.MsgpGet(s.s, "/tx/:db/:bucket/:key", s.txGet, false)
-	gserv.MsgpPut(s.s, "/tx/:db/:bucket/:key", s.txPut, false)
-	gserv.MsgpDelete(s.s, "/tx/:db/:bucket/:key", s.txDel, false)
+	gserv.MsgpPost(s.s, "/tx/begin/:db", s.txBegin, false)
+	gserv.MsgpDelete(s.s, "/tx/commit/:db", s.txCommit, false)
+	gserv.MsgpDelete(s.s, "/tx/rollback/:db", s.txRollback, false)
+	gserv.MsgpPost(s.s, "/tx/:db", s.handleTx, false)
 
-	gserv.MsgpPost(s.s, "/r/:db/seq/:bucket", s.nextSeq, false)
-	s.s.GET("/r/:db/:bucket", s.forEach)
-	gserv.MsgpGet(s.s, "/r/:db/:bucket/:key", s.get, false)
-	gserv.MsgpPut(s.s, "/r/:db/:bucket/:key", s.put, false)
-	gserv.MsgpDelete(s.s, "/r/:db/:bucket/:key", s.del, false)
+	gserv.MsgpPost(s.s, "/noTx/:db", s.handleNoTx, false)
 
 	return s
 }
@@ -152,8 +148,10 @@ func (s *Server) unlock(dbName string, commit bool) (string, error) {
 	})
 	je := &journalEntry{DB: dbName}
 	if commit {
+		s.stats.Commits.Add(1)
 		je.Op = "txCommit"
 	} else {
+		s.stats.Rollbacks.Add(1)
 		je.Op = "txRollback"
 	}
 	s.j.Write(je, err)
@@ -195,179 +193,101 @@ func (s *Server) withTx(dbName string, rm bool, fn func(tx *mbbolt.Tx) error) er
 	return fn(tx.Tx)
 }
 
-func (s *Server) txNextSeq(ctx *gserv.Context, seq uint64) (uint64, error) {
-	dbName, bucket := ctx.Param("db"), ctx.Param("bucket")
-	err := s.withTx(dbName, false, func(tx *mbbolt.Tx) (err error) {
-		if seq > 0 {
-			err = tx.SetNextIndex(bucket, seq)
+func (s *Server) handleTx(ctx *gserv.Context, req *srvReq) (out []byte, err error) {
+	dbName := ctx.Param("db")
+	if req.Op == opPut {
+		if b, ok := req.Value.([]byte); ok {
+			out = b
 		} else {
-			seq, err = tx.NextIndex(bucket)
+			out, _ = genh.MarshalMsgpack(req.Value)
 		}
-		return
-	})
-	je := &journalEntry{Op: "txNextSeq", DB: dbName, Bucket: bucket, Value: seq}
-	s.j.Write(je, err)
-	if err != nil {
-		return 0, gserv.NewError(http.StatusInternalServerError, err)
 	}
-	return seq, nil
-}
-
-func (s *Server) txGet(ctx *gserv.Context) (out []byte, err error) {
-	dbName, bucket, key := ctx.Param("db"), ctx.Param("bucket"), ctx.Param("key")
-	s.withTx(dbName, false, func(tx *mbbolt.Tx) error {
-		out = tx.GetBytes(bucket, key, true)
-		return nil
-	})
-
-	if len(out) == 0 {
-		out, err = nil, gserv.ErrNotFound
-	}
-
-	je := &journalEntry{Op: "txGet", DB: dbName, Bucket: bucket, Key: key, Value: out}
-	s.j.Write(je, err)
-
-	return
-}
-
-func (s *Server) txForEach(ctx *gserv.Context) gserv.Response {
-	dbName, bucket := ctx.Param("db"), ctx.Param("bucket")
-	enc := genh.NewMsgpackEncoder(ctx)
-
-	err := s.withTx(dbName, false, func(tx *mbbolt.Tx) error {
-		return tx.ForEachBytes(bucket, func(key, val []byte) error {
-			err := enc.Encode([2][]byte{key, val})
-			ctx.Flush()
+	err = s.withTx(dbName, false, func(tx *mbbolt.Tx) (err error) {
+		switch req.Op {
+		case opGet:
+			if out = tx.GetBytes(req.Bucket, req.Key, true); len(out) == 0 {
+				out, err = nil, oerrs.Errorf("key not found: %s::%s", req.Bucket, req.Key)
+			}
 			return err
-		})
-	})
-
-	je := &journalEntry{Op: "txForEach", DB: dbName, Bucket: bucket}
-	s.j.Write(je, err)
-
-	return nil
-}
-
-func (s *Server) txPut(ctx *gserv.Context, v []byte) (_ string, err error) {
-	dbName, bucket, key := ctx.Param("db"), ctx.Param("bucket"), ctx.Param("key")
-	je := &journalEntry{Op: "txPut", DB: dbName, Bucket: bucket, Key: key, Value: v}
-	defer s.j.Write(je, err)
-
-	if err := s.withTx(dbName, false, func(tx *mbbolt.Tx) error {
-		return tx.PutBytes(bucket, key, v)
-	}); err != nil {
-		return "", gserv.NewError(http.StatusInternalServerError, err)
-	}
-	return "OK", nil
-}
-
-func (s *Server) txDel(ctx *gserv.Context) (_ string, err error) {
-	dbName, bucket, key := ctx.Param("db"), ctx.Param("bucket"), ctx.Param("key")
-	je := &journalEntry{Op: "txDelete", DB: dbName, Bucket: bucket, Key: key}
-	defer s.j.Write(je, err)
-
-	if err := s.withTx(dbName, false, func(tx *mbbolt.Tx) error {
-		return tx.Delete(bucket, key)
-	}); err != nil {
-		return "", gserv.NewError(http.StatusInternalServerError, err)
-	}
-
-	return "OK", nil
-}
-
-func (s *Server) nextSeq(ctx *gserv.Context, seq uint64) (_ uint64, err error) {
-	dbName, bucket := ctx.Param("db"), ctx.Param("bucket")
-	db, err := s.mdb.Get(dbName, nil)
-	if err != nil {
-		return 0, gserv.NewError(http.StatusInternalServerError, err)
-	}
-
-	err = db.Update(func(tx *mbbolt.Tx) (err error) {
-		if seq > 0 {
-			return tx.SetNextIndex(bucket, seq)
+		case opPut:
+			return tx.PutBytes(req.Bucket, req.Key, out)
+		case opForEach:
+			enc := genh.NewMsgpackEncoder(ctx)
+			return tx.ForEachBytes(req.Bucket, func(key, val []byte) error {
+				err := enc.Encode([2][]byte{key, val})
+				ctx.Flush()
+				return err
+			})
+		case opSeq:
+			seq, err := tx.NextIndex(req.Bucket)
+			if err == nil {
+				out, _ = genh.MarshalMsgpack(seq)
+			}
+			return err
+		case opSetSeq:
+			err = tx.SetNextIndex(req.Bucket, req.Value.(uint64))
+			return err
+		case opDel:
+			return tx.Delete(req.Bucket, req.Key)
+		default:
+			return oerrs.Errorf("unknown op: %s", req.Op)
 		}
-		seq, err = tx.NextIndex(bucket)
 		return
 	})
-	if err != nil {
-		seq, err = 0, gserv.NewError(http.StatusInternalServerError, err)
-	}
-	je := &journalEntry{Op: "nextSeq", DB: dbName, Bucket: bucket, Value: seq}
+	je := &journalEntry{Op: "tx" + req.Op.String(), DB: dbName, Bucket: req.Bucket, Key: req.Key, Value: out}
 	s.j.Write(je, err)
-	return
-}
-
-func (s *Server) get(ctx *gserv.Context) ([]byte, error) {
-	dbName, bucket, key := ctx.Param("db"), ctx.Param("bucket"), ctx.Param("key")
-	db, err := s.mdb.Get(dbName, nil)
 	if err != nil {
 		return nil, gserv.NewError(http.StatusInternalServerError, err)
 	}
-
-	out, _ := db.GetBytes(bucket, key)
-	if len(out) == 0 {
-		out, err = nil, gserv.ErrNotFound
-	}
-
-	je := &journalEntry{Op: "get", DB: dbName, Bucket: bucket, Key: key, Value: out}
-	s.j.Write(je, err)
-
-	return out, err
+	return
 }
 
-func (s *Server) forEach(ctx *gserv.Context) gserv.Response {
-	dbName, bucket := ctx.Param("db"), ctx.Param("bucket")
-	db, err := s.mdb.Get(dbName, nil)
-	if err != nil {
-		ctx.EncodeCodec(gserv.MsgpCodec{}, http.StatusInternalServerError, gserv.NewError(http.StatusInternalServerError, err))
-		return nil
+func (s *Server) handleNoTx(ctx *gserv.Context, req *srvReq) (out []byte, err error) {
+	dbName := ctx.Param("db")
+	var db *mbbolt.DB
+	if db, err = s.mdb.Get(dbName, nil); err != nil {
+		return
 	}
-
-	enc := genh.NewMsgpackEncoder(ctx)
-	err = db.View(func(tx *mbbolt.Tx) error {
-		return tx.ForEachBytes(bucket, func(key, val []byte) error {
+	switch req.Op {
+	case opGet:
+		if out, err = db.GetBytes(req.Bucket, req.Key); len(out) == 0 {
+			out, err = nil, oerrs.Errorf("key not found: %s::%s", req.Bucket, req.Key)
+		}
+	case opPut:
+		if b, ok := req.Value.([]byte); ok {
+			out = b
+		} else {
+			out, _ = genh.MarshalMsgpack(req.Value)
+		}
+		err = db.PutBytes(req.Bucket, req.Key, out)
+	case opForEach:
+		enc := genh.NewMsgpackEncoder(ctx)
+		err = db.ForEachBytes(req.Bucket, func(key, val []byte) error {
 			err := enc.Encode([2][]byte{key, val})
 			ctx.Flush()
 			return err
 		})
-	})
+	case opSeq:
+		err = db.Update(func(tx *mbbolt.Tx) error {
+			seq, err2 := tx.NextIndex(req.Bucket)
+			if err2 == nil {
+				out, _ = genh.MarshalMsgpack(seq)
+			}
+			return err
+		})
+	case opSetSeq:
+		err = db.Update(func(tx *mbbolt.Tx) error {
+			return tx.SetNextIndex(req.Bucket, req.Value.(uint64))
+		})
+	case opDel:
+		err = db.Delete(req.Bucket, req.Key)
+	default:
+		err = oerrs.Errorf("unknown op: %s", req.Op)
+	}
 
-	je := &journalEntry{Op: "forEach", DB: dbName, Bucket: bucket}
+	je := &journalEntry{Op: req.Op.String(), DB: dbName, Bucket: req.Bucket, Key: req.Key, Value: out}
 	s.j.Write(je, err)
-
-	return nil
-}
-
-func (s *Server) put(ctx *gserv.Context, v []byte) (_ string, err error) {
-	dbName, bucket, key := ctx.Param("db"), ctx.Param("bucket"), ctx.Param("key")
-	je := &journalEntry{Op: "put", DB: dbName, Bucket: bucket, Key: key, Value: v}
-	defer s.j.Write(je, err)
-
-	db, err := s.mdb.Get(dbName, nil)
-	if err != nil {
-		return "", gserv.NewError(http.StatusInternalServerError, err)
-	}
-
-	if err = db.PutBytes(bucket, key, v); err != nil {
-		return "", gserv.NewError(http.StatusInternalServerError, err)
-	}
-	return "OK", nil
-}
-
-func (s *Server) del(ctx *gserv.Context) (_ string, err error) {
-	dbName, bucket, key := ctx.Param("db"), ctx.Param("bucket"), ctx.Param("key")
-	je := &journalEntry{Op: "delete", DB: dbName, Bucket: bucket, Key: key}
-	defer s.j.Write(je, err)
-
-	db, err := s.mdb.Get(dbName, nil)
-	if err != nil {
-		return "", gserv.NewError(http.StatusInternalServerError, err)
-	}
-
-	if err = db.Delete(bucket, key); err != nil {
-		return "", gserv.NewError(http.StatusInternalServerError, err)
-	}
-	return "OK", nil
+	return
 }
 
 func splitPath(p string) (out []string) {

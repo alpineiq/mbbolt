@@ -19,6 +19,7 @@ var (
 	clientMode bool
 	saddr      string
 	dbPath     string
+	authKey    string
 )
 
 func init() {
@@ -26,6 +27,7 @@ func init() {
 	flag.IntVar(&port, "port", 8099, "port to listen on")
 	flag.StringVar(&dbPath, "path", "./dbs", "path to store dbs")
 	flag.StringVar(&saddr, "srv", "http://127.0.0.1:8099", "path to server")
+	flag.StringVar(&authKey, "auth", "auth", "authKey")
 	flag.BoolVar(&clientMode, "c", false, "client mode")
 	flag.Parse()
 }
@@ -41,7 +43,7 @@ func main() {
 	if len(args) < 4 {
 		log.Fatal(ErrUsage)
 	}
-	cli := rbolt.NewClient(saddr)
+	cli := rbolt.NewClient(saddr, authKey)
 	defer cli.Close()
 
 	err := cli.Update(args[1], func(tx *rbolt.Tx) error {
@@ -106,6 +108,7 @@ func serve() {
 	defer cfn()
 	os.MkdirAll(dbPath, 0o755)
 	srv := rbolt.NewServer(dbPath, nil)
+	srv.AuthKey = authKey
 	defer srv.Close()
 	go func() {
 		defer cfn()

@@ -56,6 +56,12 @@ func (db *DB) GetBytes(bucket, key string) (out []byte, err error) {
 	return
 }
 
+func (db *DB) ForEachBytes(bucket string, fn func(k, v []byte) error) (err error) {
+	return db.View(func(tx *Tx) error {
+		return tx.ForEachBytes(bucket, fn)
+	})
+}
+
 func (db *DB) PutBytes(bucket, key string, val []byte) error {
 	return db.Update(func(tx *Tx) error {
 		b, err := tx.CreateBucketIfNotExists(bucket)

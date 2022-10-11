@@ -28,6 +28,7 @@ func TestClient(t *testing.T) {
 	const bucketName = "someBucket"
 
 	rbs := NewServer(t.TempDir(), nil)
+	rbs.AuthKey = "da3b361b0a16be5c31e5ef87eb4a48dcd3c1d0c9"
 	defer rbs.Close()
 	rbs.MaxUnusedLock = time.Second / 10
 	// defer rbs.Close()
@@ -38,7 +39,7 @@ func TestClient(t *testing.T) {
 	t.Log("srv addr", url)
 
 	t.Run("NoTx", func(t *testing.T) {
-		c := NewClient(url)
+		c := NewClient(url, rbs.AuthKey)
 		defer c.Close()
 		sp := &S{A: "test", B: 123, C: 123.456, S: &S{A: "-", B: 321, C: 654.321}}
 		if err := c.Put(dbName, bucketName, "key", sp); err != nil {
@@ -78,7 +79,7 @@ func TestClient(t *testing.T) {
 	})
 
 	t.Run("Tx", func(t *testing.T) {
-		c := NewClient(url)
+		c := NewClient(url, rbs.AuthKey)
 		defer c.Close()
 		if err := c.Update(dbName, func(tx *Tx) error {
 			tx.SetNextIndex(bucketName, 100)
@@ -95,7 +96,7 @@ func TestClient(t *testing.T) {
 			}
 
 			found := false
-			if err := ForEachTx(tx, dbName, bucketName, func(key string, ss *S) error {
+			if err := ForEachTx(tx, bucketName, func(key string, ss *S) error {
 				if key == "1105" {
 					if ss.S == nil || ss.S.B != 105 {
 						return fmt.Errorf("unexpected value: %+v %+v", ss, ss.S)
@@ -148,7 +149,7 @@ func TestClient(t *testing.T) {
 	})
 
 	t.Run("AutoUnlock", func(t *testing.T) {
-		c := NewClient(url)
+		c := NewClient(url, rbs.AuthKey)
 		defer c.Close()
 		err := c.Update(dbName, func(tx *Tx) error {
 			if err := tx.Put(bucketName, "1005", &S{A: "test", S: &S{B: 5}}); err != nil {
@@ -166,7 +167,7 @@ func TestClient(t *testing.T) {
 	})
 
 	t.Run("BugDecodingSimpleTypes", func(t *testing.T) {
-		c := NewClient(url)
+		c := NewClient(url, rbs.AuthKey)
 		defer c.Close()
 		if err := c.Put(dbName, bucketName+"2", "string", "str"); err != nil {
 			t.Fatal(err)
@@ -182,15 +183,33 @@ func TestClient(t *testing.T) {
 		}
 	})
 
+	t.Run("BugBadNames", func(t *testing.T) {
+		c := NewClient(url, rbs.AuthKey)
+		defer c.Close()
+		if err := c.Put(dbName, bucketName+"2", ".", "str"); err != nil {
+			t.Fatal(err)
+		}
+		var str string
+		c.ClearCache()
+
+		if err := c.Get(dbName, bucketName+"2", ".", &str); err != nil || str != "str" {
+			t.Fatal("unexpected error", err, str)
+		}
+		if err := c.Put(dbName, bucketName+"2", "#", "str"); err != nil {
+			t.Fatal(err)
+		}
+		c.ClearCache()
+
+		if err := c.Get(dbName, bucketName+"2", "#", &str); err != nil || str != "str" {
+			t.Fatal("unexpected error", err, str)
+		}
+	})
+
 	t.Run("Auth", func(t *testing.T) {
-		rbs.AuthKey = "da3b361b0a16be5c31e5ef87eb4a48dcd3c1d0c9"
-		defer func() {
-			rbs.AuthKey = ""
-		}()
-		c := NewClient(url)
+		c := NewClient(url, rbs.AuthKey)
 		// c.AuthKey = rbs.AuthKey
 		defer c.Close()
-
+		c.AuthKey = ""
 		if err := c.Put(dbName, bucketName, "11111", &S{A: "test", S: &S{B: 5}}); err == nil {
 			t.Fatal("expected error")
 		}
@@ -229,10 +248,9 @@ func TestClient(t *testing.T) {
 			// t.Log(je)
 		}
 		// update this when the test changes
-		if cnt != 221 {
+		if cnt != 225 {
 			t.Error("unexpected number of journal entries", cnt)
 		}
 		t.Logf("total %d entries", cnt)
 	})
-	t.Log("done")
 }
