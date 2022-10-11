@@ -2,8 +2,10 @@ package rbolt
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"strconv"
 	"testing"
@@ -26,6 +28,7 @@ func TestClient(t *testing.T) {
 	const bucketName = "someBucket"
 
 	rbs := NewServer(t.TempDir(), nil)
+	defer rbs.Close()
 	rbs.MaxUnusedLock = time.Second / 10
 	// defer rbs.Close()
 	go rbs.Run(context.Background(), ":0")
@@ -35,7 +38,6 @@ func TestClient(t *testing.T) {
 	t.Log("srv addr", url)
 
 	t.Run("NoTx", func(t *testing.T) {
-		t.Parallel()
 		c := NewClient(url)
 		defer c.Close()
 		sp := &S{A: "test", B: 123, C: 123.456, S: &S{A: "-", B: 321, C: 654.321}}
@@ -76,7 +78,6 @@ func TestClient(t *testing.T) {
 	})
 
 	t.Run("Tx", func(t *testing.T) {
-		t.Parallel()
 		c := NewClient(url)
 		defer c.Close()
 		if err := c.Update(dbName, func(tx *Tx) error {
@@ -145,8 +146,8 @@ func TestClient(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
+
 	t.Run("AutoUnlock", func(t *testing.T) {
-		t.Parallel()
 		c := NewClient(url)
 		defer c.Close()
 		err := c.Update(dbName, func(tx *Tx) error {
@@ -161,6 +162,23 @@ func TestClient(t *testing.T) {
 		})
 		if err == nil {
 			t.Fatal("expected error")
+		}
+	})
+
+	t.Run("BugDecodingSimpleTypes", func(t *testing.T) {
+		c := NewClient(url)
+		defer c.Close()
+		if err := c.Put(dbName, bucketName+"2", "string", "str"); err != nil {
+			t.Fatal(err)
+		}
+		var str string
+		if err := c.Get(dbName, bucketName+"2", "string", &str); err != nil || str != "str" {
+			t.Fatal("unexpected error", err, str)
+		}
+		c.ClearCache()
+
+		if err := c.Get(dbName, bucketName+"2", "string", &str); err != nil || str != "str" {
+			t.Fatal("unexpected error", err, str)
 		}
 	})
 
@@ -191,20 +209,30 @@ func TestClient(t *testing.T) {
 		}
 	})
 
-	t.Run("NoPtrBug", func(t *testing.T) {
-		c := NewClient(url)
-		defer c.Close()
-		if err := c.Put(dbName, bucketName+"2", "string", "str"); err != nil {
-			t.Fatal(err)
+	t.Run("CheckLog", func(t *testing.T) {
+		f := rbs.j.f
+		f.Sync()
+		fn := f.Name()
+		f.Seek(0, 0)
+		dec := json.NewDecoder(f)
+		t.Log(fn)
+		cnt := 0
+		for {
+			var je JournalEntry
+			if err := dec.Decode(&je); err != nil {
+				if !errors.Is(err, io.EOF) {
+					t.Error(err)
+				}
+				break
+			}
+			cnt++
+			// t.Log(je)
 		}
-		var str string
-		if err := c.Get(dbName, bucketName+"2", "string", &str); err != nil || str != "str" {
-			t.Fatal("unexpected error", err, str)
+		// update this when the test changes
+		if cnt != 221 {
+			t.Error("unexpected number of journal entries", cnt)
 		}
-		c.ClearCache()
-
-		if err := c.Get(dbName, bucketName+"2", "string", &str); err != nil || str != "str" {
-			t.Fatal("unexpected error", err, str)
-		}
+		t.Logf("total %d entries", cnt)
 	})
+	t.Log("done")
 }
