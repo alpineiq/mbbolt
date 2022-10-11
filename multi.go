@@ -2,14 +2,12 @@ package mbbolt
 
 import (
 	"archive/zip"
-	"errors"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"sync"
 	"time"
 
@@ -117,6 +115,9 @@ type Options struct {
 	//
 	// If <=0, effectively disables batching.
 	MaxBatchDelay time.Duration
+
+	MarshalFn   MarshalFn
+	UnmarshalFn UnmarshalFn
 }
 
 func (opts *Options) Clone() *Options {
@@ -250,6 +251,14 @@ func (mdb *MultiDB) Get(name string, opts *Options) (db *DB, err error) {
 
 		marshalFn:   DefaultMarshalFn,
 		unmarshalFn: DefaultUnmarshalFn,
+	}
+
+	if opts.MarshalFn != nil {
+		db.marshalFn = opts.MarshalFn
+	}
+
+	if opts.UnmarshalFn != nil {
+		db.unmarshalFn = opts.UnmarshalFn
 	}
 
 	if opts.InitDB != nil {
@@ -408,19 +417,13 @@ func (mdb *MultiDB) Close() error {
 	m := genh.MapClone(mdb.m)
 	mdb.m = nil
 	mdb.mux.Unlock()
-	var buf strings.Builder
+	var el oerrs.ErrorList
 	for k, db := range m {
 		if err := db.Close(); err != nil {
-			if buf.Len() > 0 {
-				buf.WriteString(", ")
-			}
-			fmt.Fprintf(&buf, "%s: %v", k, db)
+			el.Errorf("%s: %v", k, db)
 		}
 	}
-	if buf.Len() > 0 {
-		return errors.New(buf.String())
-	}
-	return nil
+	return el.Err()
 }
 
 func (mdb *MultiDB) getPath(name string) string {

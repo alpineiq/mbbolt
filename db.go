@@ -111,6 +111,28 @@ func (db *DB) PutAny(bucket, key string, val any, marshalFn MarshalFn) error {
 	}
 }
 
+func (db *DB) SetNextIndex(bucket string, seq uint64) error {
+	return db.Update(func(tx *Tx) error {
+		b, err := tx.CreateBucketIfNotExists(bucket)
+		if err != nil {
+			return err
+		}
+		return b.SetSequence(seq)
+	})
+}
+
+func (db *DB) NextIndex(bucket string) (idx uint64, err error) {
+	err = db.Update(func(tx *Tx) error {
+		var b *Bucket
+		if b, err = tx.CreateBucketIfNotExists(bucket); err != nil {
+			return err
+		}
+		idx, err = b.NextSequence()
+		return err
+	})
+	return
+}
+
 func (db *DB) View(fn func(*Tx) error) error {
 	return db.b.View(db.getTxFn(fn))
 }
