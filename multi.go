@@ -171,21 +171,16 @@ func MustOpen(path string, opts *Options) *DB {
 }
 
 func CloseAll() error {
-	var errs []string
-	if err := all.Close(); err != nil {
-		errs = append(errs, err.Error())
-	}
-
+	var el oerrs.ErrorList
+	el.PushIf(all.Close())
 	all.mdbs.Lock()
 	defer all.mdbs.Unlock()
 
 	for _, db := range all.mdbs.dbs {
-		if err := db.Close(); err != nil {
-			errs = append(errs, err.Error())
-		}
+		el.PushIf(db.Close())
 	}
 
-	return errors.New(strings.Join(errs, ", "))
+	return el.Err()
 }
 
 func NewMultiDB(prefix, ext string, opts *Options) *MultiDB {
@@ -217,6 +212,7 @@ func (mdb *MultiDB) MustGet(name string, opts *Options) *DB {
 
 func (mdb *MultiDB) Get(name string, opts *Options) (db *DB, err error) {
 	fp := mdb.getPath(name)
+	os.MkdirAll(filepath.Dir(fp), 0o755)
 
 	mdb.mux.RLock()
 	if db = mdb.m[name]; db != nil {
