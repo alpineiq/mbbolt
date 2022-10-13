@@ -11,33 +11,40 @@ import (
 	"unsafe"
 )
 
-func ConvertDB(src, dst *DB, bucketFn func(name string, b *Bucket) bool, fn ConvertFn) error {
-	return src.View(func(stx *Tx) error {
-		return dst.Update(func(dtx *Tx) error {
-			return stx.BBoltTx.ForEach(func(name []byte, b *Bucket) error {
-				bktName := string(name)
-				if !bucketFn(bktName, b) {
-					return nil
-				}
+type DBer interface {
+	CurrentIndex(bucket string) uint64
+	NextIndex(bucket string) (uint64, error)
+	SetNextIndex(bucket string, index uint64) error
+	Buckets() []string
+	Get(bucket, key string, v any) error
+	ForEachBytes(bucket string, fn func(k, v []byte) error) error
+	Put(bucket, key string, v any) error
+	Delete(bucket, key string) error
+}
 
-				dstBkt, err := dtx.BBoltTx.CreateBucketIfNotExists(name)
-				if err != nil {
-					return err
-				}
+var (
+	_ DBer = (*DB)(nil)
+	_ DBer = (*SegDB)(nil)
+)
 
-				if err = dstBkt.SetSequence(b.Sequence()); err != nil {
-					return err
-				}
+type ConvertFn = func(bucket string, k, v []byte) ([]byte, bool)
 
-				return b.ForEach(func(k, v []byte) (err error) {
-					if v, ok := fn(bktName, k, v); ok {
-						err = dstBkt.Put(k, v)
-					}
-					return
-				})
-			})
-		})
-	})
+func ConvertDB(dst, src DBer, fn ConvertFn) error {
+	for _, bkt := range src.Buckets() {
+		if err := dst.SetNextIndex(bkt, src.CurrentIndex(bkt)); err != nil {
+			return err
+		}
+		if err := src.ForEachBytes(bkt, func(k, v []byte) error {
+			v, ok := fn(bkt, k, v)
+			if !ok {
+				return nil
+			}
+			return dst.Put(bkt, string(k), v)
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func FramesToString(frs *runtime.Frames) string {

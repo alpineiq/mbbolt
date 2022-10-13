@@ -8,8 +8,6 @@ import (
 type (
 	MarshalFn   = func(any) ([]byte, error)
 	UnmarshalFn = func([]byte, any) error
-
-	ConvertFn = func(bucket string, k, v []byte) ([]byte, bool)
 )
 
 type Tx struct {

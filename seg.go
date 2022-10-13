@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"hash/fnv"
 	"io"
+	"log"
 
 	"go.oneofone.dev/genh"
+	"go.oneofone.dev/otk"
 )
 
 func DefaultSegmentByKey(key string) uint64 {
@@ -17,6 +19,10 @@ func DefaultSegmentByKey(key string) uint64 {
 // NewSegDB creates a new segmented database.
 // WARNING WARNING, if numSegments changes between calls, the keys will be out of sync
 func NewSegDB(prefix, ext string, opts *Options, numSegments int) *SegDB {
+	if numSegments < 1 {
+		log.Panic("numSegments < 1")
+	}
+
 	seg := &SegDB{
 		mdb: NewMultiDB(prefix, ext, opts),
 		dbs: make([]*DB, numSegments),
@@ -51,8 +57,13 @@ func (s *SegDB) Get(bucket, key string, v any) error {
 	return s.db(key).Get(bucket, key, v)
 }
 
-func (s *SegDB) ForEach(bucket string, fn func(k, v []byte) error) error {
-	return s.db(bucket).ForEachBytes(bucket, fn)
+func (s *SegDB) ForEachBytes(bucket string, fn func(k, v []byte) error) error {
+	for _, db := range s.dbs {
+		if err := db.ForEachBytes(bucket, fn); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *SegDB) Put(bucket, key string, v any) error {
@@ -69,6 +80,24 @@ func (s *SegDB) SetNextIndex(bucket string, seq uint64) error {
 
 func (s *SegDB) NextIndex(bucket string) (seq uint64, err error) {
 	return s.dbs[0].NextIndex(bucket)
+}
+
+func (s *SegDB) CurrentIndex(bucket string) (idx uint64) {
+	s.dbs[0].View(func(tx *Tx) error {
+		if b := tx.Bucket(bucket); b != nil {
+			idx = b.Sequence()
+		}
+		return nil
+	})
+	return
+}
+
+func (s *SegDB) Buckets() []string {
+	var set otk.Set
+	for _, db := range s.dbs {
+		set = set.Add(db.Buckets()...)
+	}
+	return set.SortedKeys()
 }
 
 func (s *SegDB) db(key string) *DB {

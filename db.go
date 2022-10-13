@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"go.etcd.io/bbolt"
+	"go.oneofone.dev/genh"
 )
 
 var (
@@ -92,8 +93,20 @@ func (db *DB) GetAny(bucket, key string, out any, unmarshalFn UnmarshalFn) error
 	})
 }
 
+func (db *DB) Buckets() (out []string) {
+	db.View(func(tx *Tx) error {
+		return tx.ForEach(func(name []byte, b *bbolt.Bucket) error {
+			out = append(out, string(name))
+			return nil
+		})
+	})
+	out = genh.Clip(out)
+	return
+}
+
 func (db *DB) PutAny(bucket, key string, val any, marshalFn MarshalFn) error {
 	// duplicated code from tx.PutAny to keep the marshaling outside of the locks
+
 	switch val := val.(type) {
 	case []byte:
 		return db.PutBytes(bucket, key, val)
@@ -129,6 +142,16 @@ func (db *DB) NextIndex(bucket string) (idx uint64, err error) {
 		}
 		idx, err = b.NextSequence()
 		return err
+	})
+	return
+}
+
+func (db *DB) CurrentIndex(bucket string) (idx uint64) {
+	db.View(func(tx *Tx) error {
+		if b := tx.Bucket(bucket); b != nil {
+			idx = b.Sequence()
+		}
+		return nil
 	})
 	return
 }

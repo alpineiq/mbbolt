@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestSeg(t *testing.T) {
+func TestSegDB(t *testing.T) {
 	t.Run("SegmentFn", func(t *testing.T) {
 		m := [10]int{}
 		for i := 0; i < 1000; i++ {
