@@ -416,6 +416,7 @@ func (mdb *MultiDB) Close() error {
 	defer mdb.mux.Unlock()
 	var el oerrs.ErrorList
 	for k, db := range mdb.m {
+		db.onClose = nil // we're handling this
 		if err := db.Close(); err != nil {
 			el.Errorf("%s: %v", k, db)
 		}

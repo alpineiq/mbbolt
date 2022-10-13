@@ -30,10 +30,9 @@ func NewSegDB(prefix, ext string, opts *Options, numSegments int) *SegDB {
 		SegmentFn: DefaultSegmentByKey,
 	}
 
-	mdb := NewMultiDB(prefix, ext, opts)
 	for i := 0; i < numSegments; i++ {
 		name := fmt.Sprintf("%06d", i)
-		db := mdb.MustGet(name, opts)
+		db := seg.mdb.MustGet(name, opts)
 		if opts == nil || opts.MarshalFn == nil {
 			db.SetMarshaler(genh.MarshalMsgpack, genh.UnmarshalMsgpack)
 		}
