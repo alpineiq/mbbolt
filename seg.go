@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"hash/fnv"
 	"io"
-	"sync"
 
 	"go.oneofone.dev/genh"
 )
@@ -39,7 +38,6 @@ func NewSegDB(prefix, ext string, opts *Options, numSegments int) *SegDB {
 
 type SegDB struct {
 	SegmentFn func(key string) uint64
-	seqMux    sync.Mutex
 
 	mdb *MultiDB
 	dbs []*DB
@@ -66,14 +64,10 @@ func (s *SegDB) Delete(bucket, key string) error {
 }
 
 func (s *SegDB) SetNextIndex(bucket string, seq uint64) error {
-	s.seqMux.Lock()
-	defer s.seqMux.Unlock()
 	return s.dbs[0].SetNextIndex(bucket, seq)
 }
 
 func (s *SegDB) NextIndex(bucket string) (seq uint64, err error) {
-	s.seqMux.Lock()
-	defer s.seqMux.Unlock()
 	return s.dbs[0].NextIndex(bucket)
 }
 
