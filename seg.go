@@ -68,28 +68,13 @@ func (s *SegDB) Delete(bucket, key string) error {
 func (s *SegDB) SetNextIndex(bucket string, seq uint64) error {
 	s.seqMux.Lock()
 	defer s.seqMux.Unlock()
-	for _, db := range s.dbs {
-		if err := db.SetNextIndex(bucket, seq); err != nil {
-			return err
-		}
-	}
-	return nil
+	return s.dbs[0].SetNextIndex(bucket, seq)
 }
 
 func (s *SegDB) NextIndex(bucket string) (seq uint64, err error) {
 	s.seqMux.Lock()
 	defer s.seqMux.Unlock()
-	var last uint64
-	for i, db := range s.dbs {
-		if seq, err = db.NextIndex(bucket); err != nil {
-			return 0, err
-		}
-		if i > 0 && seq != last {
-			return 0, fmt.Errorf("sequence mismatch: %d != %d", seq, last)
-		}
-		last = seq
-	}
-	return
+	return s.dbs[0].NextIndex(bucket)
 }
 
 func (s *SegDB) db(key string) *DB {
