@@ -342,7 +342,7 @@ func (mdb *MultiDB) BackupToDir(dir string, filter func(name string, db *DB) boo
 			continue
 		}
 
-		fp := filepath.Join(dir, name+mdb.prefix)
+		fp := filepath.Join(dir, name+mdb.ext)
 		os.MkdirAll(filepath.Dir(fp), 0o755)
 
 		var n2 int64
@@ -395,15 +395,15 @@ func (mdb *MultiDB) Backup(w io.Writer, filter func(name string, db *DB) bool) (
 			continue
 		}
 
-		fp := name + mdb.prefix
+		fp := name + mdb.ext
 		w, err2 := z.Create(fp)
 		if err2 != nil {
-			err = oerrs.Errorf("zip %s: %v", fp, err2)
+			err = oerrs.Errorf("zip %s: %w", fp, err2)
 			return
 		}
 		var n2 int64
 		if n2, err = db.Backup(w); err != nil {
-			err = oerrs.Errorf("backup %s: %v", fp, err)
+			err = oerrs.Errorf("backup %s: %w", fp, err)
 			return
 		}
 		n += n2

@@ -99,6 +99,10 @@ func (s *SegDB) Buckets() []string {
 	return set.SortedKeys()
 }
 
+func (s *SegDB) Backup(w io.Writer) (int64, error) {
+	return s.mdb.Backup(w, nil)
+}
+
 func (s *SegDB) db(key string) *DB {
 	return s.dbs[s.SegmentFn(key)%uint64(len(s.dbs))]
 }
