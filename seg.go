@@ -17,6 +17,7 @@ func DefaultSegmentByKey(key string) uint64 {
 }
 
 // NewSegDB creates a new segmented database.
+// SegDB uses msgpack by default.
 // WARNING WARNING, if numSegments changes between calls, the keys will be out of sync
 func NewSegDB(prefix, ext string, opts *Options, numSegments int) *SegDB {
 	if numSegments < 1 {

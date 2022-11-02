@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vmihailenco/msgpack/v5"
 	"go.oneofone.dev/genh"
 	"go.oneofone.dev/gserv"
+	"go.oneofone.dev/msgpack/v5"
 	"go.oneofone.dev/oerrs"
 	"go.oneofone.dev/otk"
 )

@@ -2,7 +2,6 @@ package mbbolt
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"log"
 	"math/big"
@@ -12,6 +11,7 @@ import (
 
 	"go.etcd.io/bbolt"
 	"go.oneofone.dev/genh"
+	"go.oneofone.dev/oerrs"
 )
 
 var (
@@ -213,10 +213,7 @@ func (db *DB) BackupToFile(fp string) (n int64, err error) {
 	defer func() {
 		putBufAndFlush(buf)
 		if err2 := f.Close(); err2 != nil {
-			if err != nil {
-				err2 = fmt.Errorf("multiple errors: %v, %v", err, err2)
-			}
-			err = err2
+			err = oerrs.Join(err, err2)
 		}
 	}()
 	return db.Backup(buf)
