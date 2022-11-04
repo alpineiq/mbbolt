@@ -104,6 +104,13 @@ func (s *SegDB) Backup(w io.Writer) (int64, error) {
 	return s.mdb.Backup(w, nil)
 }
 
+func (s *SegDB) SetNoBatch(v bool) (old bool) {
+	for _, db := range s.dbs {
+		old = db.SetNoBatch(v)
+	}
+	return
+}
+
 func (s *SegDB) db(key string) *DB {
 	return s.dbs[s.SegmentFn(key)%uint64(len(s.dbs))]
 }

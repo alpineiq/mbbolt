@@ -33,8 +33,8 @@ var DefaultOptions = &Options{
 	NoGrowSync:     false,
 	FreelistType:   bbolt.FreelistMapType,
 
-	MaxBatchSize:  1024,
-	MaxBatchDelay: time.Second / 2,
+	MaxBatchSize:  512,
+	MaxBatchDelay: time.Millisecond * 100,
 
 	// syscall.MAP_POPULATE on linux 2.6.23+ does sequential read-ahead
 	// which can speed up entire-database read with boltdb.
@@ -241,6 +241,7 @@ func (mdb *MultiDB) Get(name string, opts *Options) (db *DB, err error) {
 	if opts.MaxBatchDelay > 0 {
 		bdb.MaxBatchDelay = opts.MaxBatchDelay
 	}
+
 	if opts.MaxBatchSize > 0 {
 		bdb.MaxBatchSize = opts.MaxBatchSize
 	}

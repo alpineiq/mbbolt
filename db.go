@@ -27,6 +27,8 @@ type DB struct {
 
 	onClose func()
 	slow    *slowUpdate
+
+	noBatch bool
 }
 
 func (db *DB) SetMarshaler(marshalFn MarshalFn, unmarshalFn UnmarshalFn) {
@@ -64,13 +66,17 @@ func (db *DB) ForEachBytes(bucket string, fn func(k, v []byte) error) (err error
 }
 
 func (db *DB) PutBytes(bucket, key string, val []byte) error {
-	return db.Update(func(tx *Tx) error {
+	fn := func(tx *Tx) error {
 		b, err := tx.CreateBucketIfNotExists(bucket)
 		if err != nil {
 			return err
 		}
 		return b.Put(unsafeBytes(key), val)
-	})
+	}
+	if db.noBatch {
+		return db.Update(fn)
+	}
+	return db.Batch(fn)
 }
 
 func (db *DB) Get(bucket, key string, out any) (err error) {
@@ -235,6 +241,11 @@ func (db *DB) Close() error {
 		db.onClose()
 	}
 	return db.b.Close()
+}
+
+func (db *DB) SetNoBatch(v bool) (old bool) {
+	old, db.noBatch = db.noBatch, v
+	return
 }
 
 func (db *DB) updateSlow(fn func(*Tx) error, su *slowUpdate) (err error) {

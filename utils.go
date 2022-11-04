@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 	"unsafe"
+
+	"go.oneofone.dev/genh"
 )
 
 type DBer interface {
@@ -27,9 +29,27 @@ var (
 	_ DBer = (*SegDB)(nil)
 )
 
-type ConvertFn = func(bucket string, k, v []byte) ([]byte, bool)
+type (
+	ConvertFn = func(bucket string, k, v []byte) ([]byte, bool)
+
+	noBatcher interface {
+		SetNoBatch(v bool) bool
+	}
+)
 
 func ConvertDB(dst, src DBer, fn ConvertFn) error {
+	// batching greatly slows down sync operations
+	if dst, ok := dst.(noBatcher); ok {
+		defer dst.SetNoBatch(dst.SetNoBatch(true))
+	}
+	if src, ok := src.(noBatcher); ok {
+		defer src.SetNoBatch(src.SetNoBatch(true))
+	}
+	if fn == nil {
+		fn = func(bucket string, k, v []byte) ([]byte, bool) {
+			return v, true
+		}
+	}
 	for _, bkt := range src.Buckets() {
 		if err := dst.SetNextIndex(bkt, src.CurrentIndex(bkt)); err != nil {
 			return err
@@ -74,8 +94,8 @@ func unsafeBytes(s string) (out []byte) {
 	return *(*[]byte)(unsafe.Pointer(&stringCap{s, len(s)}))
 }
 
-var bufPool = sync.Pool{
-	New: func() interface{} {
+var bufPool = genh.Pool[bufio.Writer]{
+	New: func() *bufio.Writer {
 		return bufio.NewWriterSize(nil, 8*1024*1024)
 	},
 }
@@ -84,7 +104,7 @@ func getBuf(w io.Writer) *bufio.Writer {
 	if b, ok := w.(*bufio.Writer); ok {
 		return b
 	}
-	buf := bufPool.Get().(*bufio.Writer)
+	buf := bufPool.Get()
 	buf.Reset(w)
 	return buf
 }
