@@ -3,10 +3,10 @@ module go.oneofone.dev/mbbolt
 go 1.19
 
 require (
+	github.com/vmihailenco/msgpack/v5 v5.3.5
 	go.etcd.io/bbolt v1.3.6
-	go.oneofone.dev/genh v0.0.0-20221030171747-50d9aecb00ee
+	go.oneofone.dev/genh v0.0.0-20221122171013-3e3738862e64
 	go.oneofone.dev/gserv v1.0.1-0.20221031192708-d6becfe7775f
-	go.oneofone.dev/msgpack/v5 v5.3.7
 )
 
 require golang.org/x/net v0.1.0 // indirect
