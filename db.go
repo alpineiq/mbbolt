@@ -28,7 +28,7 @@ type DB struct {
 	onClose func()
 	slow    *slowUpdate
 
-	noBatch genh.AtomicBool
+	useBatch genh.AtomicBool
 }
 
 func (db *DB) SetMarshaler(marshalFn MarshalFn, unmarshalFn UnmarshalFn) {
@@ -73,7 +73,7 @@ func (db *DB) PutBytes(bucket, key string, val []byte) error {
 		}
 		return b.Put(unsafeBytes(key), val)
 	}
-	if db.noBatch.Load() {
+	if !db.useBatch.Load() {
 		return db.Update(fn)
 	}
 	return db.Batch(fn)
@@ -243,8 +243,8 @@ func (db *DB) Close() error {
 	return db.b.Close()
 }
 
-func (db *DB) SetNoBatch(v bool) (old bool) {
-	return db.noBatch.Swap(v)
+func (db *DB) UseBatch(v bool) (old bool) {
+	return db.useBatch.Swap(v)
 }
 
 func (db *DB) updateSlow(fn func(*Tx) error, su *slowUpdate) (err error) {

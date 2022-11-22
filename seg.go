@@ -104,9 +104,9 @@ func (s *SegDB) Backup(w io.Writer) (int64, error) {
 	return s.mdb.Backup(w, nil)
 }
 
-func (s *SegDB) SetNoBatch(v bool) (old bool) {
+func (s *SegDB) UseBatch(v bool) (old bool) {
 	for _, db := range s.dbs {
-		old = db.SetNoBatch(v)
+		old = db.UseBatch(v)
 	}
 	return
 }
