@@ -5,7 +5,7 @@ go 1.19
 require (
 	github.com/vmihailenco/msgpack/v5 v5.3.5
 	go.etcd.io/bbolt v1.3.6
-	go.oneofone.dev/genh v0.0.0-20221122171013-3e3738862e64
+	go.oneofone.dev/genh v0.0.0-20221125185416-130ad494926e
 	go.oneofone.dev/gserv v1.0.1-0.20221104192552-a68ea5f7842f
 )
 

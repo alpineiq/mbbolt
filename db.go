@@ -73,6 +73,7 @@ func (db *DB) PutBytes(bucket, key string, val []byte) error {
 		}
 		return b.Put(unsafeBytes(key), val)
 	}
+
 	if !db.useBatch.Load() {
 		return db.Update(fn)
 	}
@@ -168,13 +169,16 @@ func (db *DB) View(fn func(*Tx) error) error {
 
 func (db *DB) Update(fn func(*Tx) error) error {
 	if db.slow != nil {
-		return db.updateSlow(fn, db.slow)
+		return db.updateSlow(fn, db.slow, false)
 	}
 
 	return db.b.Update(db.getTxFn(fn))
 }
 
 func (db *DB) Batch(fn func(*Tx) error) error {
+	if db.slow != nil {
+		return db.updateSlow(fn, db.slow, true)
+	}
 	return db.b.Batch(db.getTxFn(fn))
 }
 
@@ -247,7 +251,7 @@ func (db *DB) UseBatch(v bool) (old bool) {
 	return db.useBatch.Swap(v)
 }
 
-func (db *DB) updateSlow(fn func(*Tx) error, su *slowUpdate) (err error) {
+func (db *DB) updateSlow(fn func(*Tx) error, su *slowUpdate, batch bool) (err error) {
 	var pcs [6]uintptr
 
 	frames := runtime.CallersFrames(pcs[:runtime.Callers(3, pcs[:])])
@@ -256,7 +260,11 @@ func (db *DB) updateSlow(fn func(*Tx) error, su *slowUpdate) (err error) {
 	su.Lock()
 	defer su.Unlock()
 
-	err = db.b.Update(db.getTxFn(fn))
+	if batch {
+		err = db.b.Batch(db.getTxFn(fn))
+	} else {
+		err = db.b.Update(db.getTxFn(fn))
+	}
 	if took := time.Since(start); took >= su.min {
 		su.fn(frames, took)
 	}
