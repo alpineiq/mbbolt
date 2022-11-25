@@ -9,7 +9,7 @@ import (
 )
 
 func TestConvert(t *testing.T) {
-	const N = 100
+	const N = 1000000
 	tmp := t.TempDir()
 	db1, err := Open(filepath.Join(tmp, "1.db"), nil)
 	db1.SetMarshaler(genh.MarshalMsgpack, genh.UnmarshalMsgpack)

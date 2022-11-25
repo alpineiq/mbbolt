@@ -32,18 +32,18 @@ var (
 type (
 	ConvertFn = func(bucket string, k, v []byte) ([]byte, bool)
 
-	noBatcher interface {
-		SetNoBatch(v bool) bool
+	batcher interface {
+		UseBatch(v bool) bool
 	}
 )
 
 func ConvertDB(dst, src DBer, fn ConvertFn) error {
 	// batching greatly slows down sync operations
-	if dst, ok := dst.(noBatcher); ok {
-		defer dst.SetNoBatch(dst.SetNoBatch(true))
+	if dst, ok := dst.(batcher); ok {
+		defer dst.UseBatch(dst.UseBatch(false))
 	}
-	if src, ok := src.(noBatcher); ok {
-		defer src.SetNoBatch(src.SetNoBatch(true))
+	if src, ok := src.(batcher); ok {
+		defer src.UseBatch(src.UseBatch(false))
 	}
 	if fn == nil {
 		fn = func(bucket string, k, v []byte) ([]byte, bool) {
