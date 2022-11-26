@@ -53,6 +53,12 @@ func (s *SegDB) Close() error {
 	return s.mdb.Close()
 }
 
+func (s *SegDB) SetMarshaler(marshalFn MarshalFn, unmarshalFn UnmarshalFn) {
+	for _, db := range s.dbs {
+		db.SetMarshaler(marshalFn, unmarshalFn)
+	}
+}
+
 func (s *SegDB) Get(bucket, key string, v any) error {
 	return s.db(key).Get(bucket, key, v)
 }

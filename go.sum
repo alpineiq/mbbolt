@@ -20,6 +20,8 @@ go.oneofone.dev/genh v0.0.0-20221125184731-cc754673b74e h1:K8UwSv3MJJ8lg/x5GSHbY
 go.oneofone.dev/genh v0.0.0-20221125184731-cc754673b74e/go.mod h1:RwkoqGiq+jvQztAIBUnNWyXX1DsE89xI23Vey/TgMlQ=
 go.oneofone.dev/genh v0.0.0-20221125185416-130ad494926e h1:TQos6FndMFQcuWW4nLZCO2UlveadcRJ10XDD0wHxbQs=
 go.oneofone.dev/genh v0.0.0-20221125185416-130ad494926e/go.mod h1:RwkoqGiq+jvQztAIBUnNWyXX1DsE89xI23Vey/TgMlQ=
+go.oneofone.dev/genh v0.0.0-20221126100704-2bef71a004e6 h1:jT/tp8KuOfozIFDJZRP/zdWQnuc7GvHgywtz2ipi6wI=
+go.oneofone.dev/genh v0.0.0-20221126100704-2bef71a004e6/go.mod h1:RwkoqGiq+jvQztAIBUnNWyXX1DsE89xI23Vey/TgMlQ=
 go.oneofone.dev/gserv v1.0.1-0.20221104192552-a68ea5f7842f h1:blGyOc3L+wBcNVCBicFAxU8Zocyq7yIZLqM9hh7gxsU=
 go.oneofone.dev/gserv v1.0.1-0.20221104192552-a68ea5f7842f/go.mod h1:L2gZRaylpzsOkMRs3Hvg0X4PRCKVD0ucM6NKrp+wVlY=
 go.oneofone.dev/oerrs v1.0.7-0.20221003171156-2726106fc553 h1:ymNAHU2jUZeBxE/ogvQ4Mx7i5frLUiqmSwC9XF1ELMQ=
