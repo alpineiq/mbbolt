@@ -97,7 +97,7 @@ func (tx *Tx) getAny(createBucket bool, bucket, key string, out any, unmarshalFn
 		if unmarshalFn == nil {
 			unmarshalFn = DefaultUnmarshalFn
 		}
-		return unmarshalFn(val, &out)
+		return unmarshalFn(val, out)
 	}
 	return nil
 }
