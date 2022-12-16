@@ -34,7 +34,7 @@ var DefaultOptions = &Options{
 	FreelistType:   bbolt.FreelistMapType,
 
 	MaxBatchSize:  512,
-	MaxBatchDelay: time.Millisecond * 100,
+	MaxBatchDelay: time.Millisecond * 10,
 
 	// syscall.MAP_POPULATE on linux 2.6.23+ does sequential read-ahead
 	// which can speed up entire-database read with boltdb.
@@ -221,20 +221,31 @@ func (mdb *MultiDB) Get(name string, opts *Options) (db *DB, err error) {
 	}
 	mdb.mux.RUnlock()
 
-	mdb.mux.Lock()
-	defer mdb.mux.Unlock()
-
-	// race check
-	if db = mdb.m[name]; db != nil {
-		return
-	}
-
 	if opts == nil {
 		opts = mdb.opts
 	}
 
 	var bdb *BBoltDB
-	if bdb, err = bbolt.Open(fp, 0o600, opts.BoltOpts()); err != nil {
+	if bdb, err = bbolt.Open(fp, 0o600, opts.BoltOpts()); err != nil && err != bbolt.ErrTimeout {
+		return
+	}
+
+	if err == bbolt.ErrTimeout {
+		err = nil
+		for db == nil {
+			mdb.mux.RLock()
+			db = mdb.m[name]
+			mdb.mux.RUnlock()
+			time.Sleep(time.Millisecond * 10)
+		}
+		return
+	}
+
+	mdb.mux.Lock()
+	defer mdb.mux.Unlock()
+
+	// race check
+	if db = mdb.m[name]; db != nil {
 		return
 	}
 
