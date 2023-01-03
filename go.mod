@@ -4,7 +4,7 @@ go 1.19
 
 require (
 	github.com/vmihailenco/msgpack/v5 v5.3.5
-	go.etcd.io/bbolt v1.3.6
+	go.etcd.io/bbolt v1.3.7-0.20221229101948-b654ce922133
 	go.oneofone.dev/genh v0.0.0-20221126100932-f9d9596a8a33
 	go.oneofone.dev/gserv v1.0.1-0.20221104192552-a68ea5f7842f
 )
@@ -17,7 +17,7 @@ require (
 	golang.org/x/crypto v0.3.0 // indirect
 	golang.org/x/image v0.1.0 // indirect
 	golang.org/x/net v0.2.0 // indirect
-	golang.org/x/sys v0.2.0 // indirect
+	golang.org/x/sys v0.3.0 // indirect
 	golang.org/x/text v0.4.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 )
