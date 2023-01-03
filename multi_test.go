@@ -1,6 +1,7 @@
 package mbbolt
 
 import (
+	"strconv"
 	"sync"
 	"testing"
 )
@@ -11,10 +12,12 @@ func TestMultiRace(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := 0; i < 100; i++ {
 		wg.Add(1)
+		i := i
 		go func() {
 			defer wg.Done()
-			mdb.MustGet("test", nil)
+			mdb.MustGet("test"+strconv.Itoa(i%3), nil)
 		}()
 	}
 	wg.Wait()
+	mdb.Close()
 }

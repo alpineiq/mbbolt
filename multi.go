@@ -426,13 +426,22 @@ func (mdb *MultiDB) Backup(w io.Writer, filter func(name string, db *DB) bool) (
 func (mdb *MultiDB) Close() error {
 	mdb.mux.Lock()
 	defer mdb.mux.Unlock()
-	var el oerrs.ErrorList
+	el := oerrs.NewSafeList(true)
+
+	var wg sync.WaitGroup
 	for k, db := range mdb.m {
-		db.onClose = nil // we're handling this
-		if err := db.Close(); err != nil {
-			el.Errorf("%s: %v", k, db)
-		}
+		k, db := k, db
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			db.onClose = nil // we're handling this
+			if err := db.Close(); err != nil {
+				el.Errorf("%s: %v", k, db)
+			}
+		}()
+
 	}
+	wg.Wait()
 	mdb.m = nil
 	return el.Err()
 }
