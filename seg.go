@@ -7,8 +7,8 @@ import (
 	"log"
 	"sync"
 
-	"go.oneofone.dev/genh"
-	"go.oneofone.dev/otk"
+	"github.com/alpineiq/genh"
+	"github.com/alpineiq/otk"
 )
 
 func DefaultSegmentByKey(key string) uint64 {

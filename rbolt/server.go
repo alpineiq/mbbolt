@@ -9,10 +9,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"go.oneofone.dev/genh"
-	"go.oneofone.dev/gserv"
-	"go.oneofone.dev/mbbolt"
-	"go.oneofone.dev/oerrs"
+	"github.com/alpineiq/genh"
+	"github.com/alpineiq/gserv"
+	"github.com/alpineiq/mbbolt"
+	"github.com/alpineiq/oerrs"
 )
 
 var (

@@ -10,7 +10,7 @@ import (
 	"time"
 	"unsafe"
 
-	"go.oneofone.dev/genh"
+	"github.com/alpineiq/genh"
 )
 
 type DBer interface {

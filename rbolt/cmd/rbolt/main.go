@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"syscall"
 
-	"go.oneofone.dev/mbbolt/rbolt"
-	"go.oneofone.dev/oerrs"
+	"github.com/alpineiq/mbbolt/rbolt"
+	"github.com/alpineiq/oerrs"
 )
 
 var (

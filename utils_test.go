@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"go.oneofone.dev/genh"
+	"github.com/alpineiq/genh"
 )
 
 func TestConvert(t *testing.T) {

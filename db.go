@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"go.etcd.io/bbolt"
-	"go.oneofone.dev/genh"
-	"go.oneofone.dev/oerrs"
+	"github.com/alpineiq/genh"
+	"github.com/alpineiq/oerrs"
 )
 
 var (

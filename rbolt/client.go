@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"github.com/vmihailenco/msgpack/v5"
-	"go.oneofone.dev/genh"
-	"go.oneofone.dev/gserv"
-	"go.oneofone.dev/oerrs"
-	"go.oneofone.dev/otk"
+	"github.com/alpineiq/genh"
+	"github.com/alpineiq/gserv"
+	"github.com/alpineiq/oerrs"
+	"github.com/alpineiq/otk"
 )
 
 func NewClient(addr, auth string) *Client {

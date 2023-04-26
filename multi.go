@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"go.etcd.io/bbolt"
-	"go.oneofone.dev/oerrs"
+	"github.com/alpineiq/oerrs"
 )
 
 // bbolt type aliases

@@ -5,8 +5,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"go.oneofone.dev/genh"
-	"go.oneofone.dev/oerrs"
+	"github.com/alpineiq/genh"
+	"github.com/alpineiq/oerrs"
 )
 
 const ErrDeleteKey = oerrs.String("delete")
